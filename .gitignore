@@ -61,7 +61,6 @@ __pycache__
 *.json
 *.d
 build
-data
 recommonmark
 bin
 deps

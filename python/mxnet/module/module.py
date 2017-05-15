@@ -206,6 +206,7 @@ class Module(BaseModule):
         # copy the initialized parameters to devices
         self._exec_group.set_params(self._arg_params, self._aux_params)
 
+
     def bind(self, data_shapes, label_shapes=None, for_training=True,
              inputs_need_grad=False, force_rebind=False, shared_module=None,
              grad_req='write'):

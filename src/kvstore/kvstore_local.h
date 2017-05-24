@@ -59,15 +59,8 @@ class KVStoreLocal : public KVStore {
       int key = uniq_keys[i];
       const NDArray& merged = comm_->Reduce(key, grouped_vals[i], priority);
       NDArray& local = local_[key];
-      if (updater_ != nullptr) {
-        CHECK(!local.is_none()) << "key " << key << " has not been inited";
-        // if merged is on gpu, we may need copy weight from cpu to gpu
-        if (merged.ctx().dev_mask() != cpu::kDevMask &&
-            local.ctx().dev_mask() == cpu::kDevMask) {
-          local = local.Copy(merged.ctx());
-        }
-        local = merged;
-      }
+      CHECK(!local.is_none()) << "key " << key << " has not been inited";
+      CopyFromTo(merged, &local);
     }
   }
 

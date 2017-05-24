@@ -207,7 +207,7 @@ class Module(BaseModule):
         self._exec_group.set_params(self._arg_params, self._aux_params)
         # by starimpact
         if self._update_on_kvstore:
-            _reset_params_on_kvstore(self._arg_params, self._kvstore)
+            _reset_params_on_kvstore(self._exec_group.param_arrays, self._kvstore)
 
     def bind(self, data_shapes, label_shapes=None, for_training=True,
              inputs_need_grad=False, force_rebind=False, shared_module=None,

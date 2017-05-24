@@ -47,6 +47,30 @@ class KVStoreLocal : public KVStore {
     }
   }
 
+  //by starimpact
+  void Reset(const std::vector<int>& keys,
+            const std::vector<NDArray>& values,
+            int priority) override {
+    std::vector<int> uniq_keys;
+    std::vector<std::vector<NDArray> > grouped_vals;
+    GroupKVPairs(keys, values, &uniq_keys, &grouped_vals);
+
+    for (size_t i = 0; i < uniq_keys.size(); ++i) {
+      int key = uniq_keys[i];
+      const NDArray& merged = comm_->Reduce(key, grouped_vals[i], priority);
+      NDArray& local = local_[key];
+      if (updater_ != nullptr) {
+        CHECK(!local.is_none()) << "key " << key << " has not been inited";
+        // if merged is on gpu, we may need copy weight from cpu to gpu
+        if (merged.ctx().dev_mask() != cpu::kDevMask &&
+            local.ctx().dev_mask() == cpu::kDevMask) {
+          local = local.Copy(merged.ctx());
+        }
+        local = merged;
+      }
+    }
+  }
+
   void Push(const std::vector<int>& keys,
             const std::vector<NDArray>& values,
             int priority) override {

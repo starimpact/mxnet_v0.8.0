@@ -10,7 +10,7 @@ from .. import ndarray as nd
 from .. import optimizer as opt
 
 from .executor_group import DataParallelExecutorGroup
-from ..model import _create_kvstore, _initialize_kvstore, _update_params, _update_params_on_kvstore
+from ..model import _create_kvstore, _initialize_kvstore, _update_params, _update_params_on_kvstore, _reset_params_on_kvstore
 from ..initializer import Uniform
 
 from .base_module import BaseModule
@@ -205,7 +205,9 @@ class Module(BaseModule):
 
         # copy the initialized parameters to devices
         self._exec_group.set_params(self._arg_params, self._aux_params)
-
+        # by starimpact
+        if self._update_on_kvstore:
+            _reset_params_on_kvstore(self._arg_params, self._kvstore)
 
     def bind(self, data_shapes, label_shapes=None, for_training=True,
              inputs_need_grad=False, force_rebind=False, shared_module=None,

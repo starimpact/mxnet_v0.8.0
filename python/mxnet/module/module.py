@@ -10,7 +10,8 @@ from .. import ndarray as nd
 from .. import optimizer as opt
 
 from .executor_group import DataParallelExecutorGroup
-from ..model import _create_kvstore, _initialize_kvstore, _update_params, _update_params_on_kvstore, _reset_params_on_kvstore
+from ..model import _create_kvstore, _initialize_kvstore, _update_params, _update_params_on_kvstore
+from ..model import _reset_params_on_kvstore
 from ..initializer import Uniform
 
 from .base_module import BaseModule

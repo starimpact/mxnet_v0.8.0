@@ -75,10 +75,11 @@ class KVStoreDist : public KVStoreLocal {
     }
   }
 
-  // by starimpact
+  // add by starimpact
   void Reset(const std::vector<int>& keys,
             const std::vector<NDArray>& values,
             int priority) override {
+    Push_(keys, values, priority, true, true);
   }
 
   void Push(const std::vector<int>& keys,
@@ -187,7 +188,8 @@ class KVStoreDist : public KVStoreLocal {
   void Push_(const std::vector<int>& keys,
              const std::vector<NDArray>& values,
              int priority,
-             bool do_merge)  {
+             bool do_merge,
+             bool reset = false)  {
     // first aggregate the values over keys
     std::vector<int> uniq_keys;
     std::vector<std::vector<NDArray> > grouped_vals;
@@ -213,14 +215,14 @@ class KVStoreDist : public KVStoreLocal {
       size_t size = send_buf.shape().Size();
       real_t* data = static_cast<real_t*>(send_buf.data().dptr_);
       auto push_to_servers =
-          [this, key, data, size](RunContext rctx, Engine::CallbackOnComplete cb) {
+          [this, key, data, size, reset](RunContext rctx, Engine::CallbackOnComplete cb) {
          // convert to ps keys
         PSKV& pskv = EncodeKey(key, size);
 
         // do push. false means no delete
         ps::SArray<real_t> vals(data, size, false);
         CHECK_NOTNULL(ps_worker_)->ZPush(
-        pskv.keys, vals, pskv.lens, 0, [cb]() { cb(); });
+        pskv.keys, vals, pskv.lens, 0, [cb]() { cb(); }, reset);
       };
       Engine::Get()->PushAsync(
           push_to_servers,

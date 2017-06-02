@@ -41,6 +41,24 @@ struct KVPairs {
   SArray<int> lens;
 };
 
+template <typename Val>
+struct KVPairs_Partial {
+  // /** \brief empty constructor */
+  // KVPairs() {}
+  /** \brief the list of keys */
+  SArray<Key> keys;
+  /** \brief the according values */
+  SArray<Val> vals;
+  /** \brief the according value lengths (could be empty) */
+  SArray<int> lens;
+
+  SArray<int> ori_lens;
+
+  SArray<int> ori_shape;
+
+  SArray<int> ori_index;
+};
+
 /**
  * \brief A worker node that can \ref Push (\ref Pull) key-value pairs to (from) server
  * nodes
@@ -70,6 +88,7 @@ class KVWorker : public SimpleApp {
   explicit KVWorker(int app_id) : SimpleApp() {
     using namespace std::placeholders;
     slicer_ = std::bind(&KVWorker<Val>::DefaultSlicer, this, _1, _2, _3);
+    slicer_partial_ = std::bind(&KVWorker<Val>::DefaultSlicer_Partial, this, _1, _2, _3);
     obj_ = new Customer(app_id, std::bind(&KVWorker<Val>::Process, this, _1));
   }
 
@@ -114,6 +133,20 @@ class KVWorker : public SimpleApp {
            const Callback& cb = nullptr) {
     return ZPush(
         SArray<Key>(keys), SArray<Val>(vals), SArray<int>(lens), cmd, cb);
+  }
+
+  int Push_Partial(const std::vector<Key>& keys,
+           const std::vector<Val>& vals,
+           const SArray<int>& ori_shape,
+           const SArray<int>& ori_index,
+           const SArray<int>& ori_lens,
+           const std::vector<int>& lens,
+           int cmd = 1,
+           const Callback& cb = nullptr) {
+
+    return ZPush_Partial(
+        SArray<Key>(keys), SArray<Val>(vals), ori_shape,
+        ori_index, ori_lens, SArray<int>(lens), cmd, cb);
   }
 
   /**
@@ -187,6 +220,27 @@ class KVWorker : public SimpleApp {
     return ts;
   }
 
+  int ZPush_Partial(const SArray<Key>& keys,
+            const SArray<Val>& vals,
+            const SArray<int>& ori_shape,
+            const SArray<int>& ori_index,
+            const SArray<int>& ori_lens,
+            const SArray<int>& lens,
+            int cmd = 1,
+            const Callback& cb = nullptr) {
+    int ts = obj_->NewRequest(kServerGroup);
+    AddCallback(ts, cb);
+    KVPairs_Partial<Val> kvs;
+    kvs.keys = keys;
+    kvs.vals = vals;
+    kvs.lens = lens;
+    kvs.ori_lens = ori_lens;
+    kvs.ori_shape = ori_shape;
+    kvs.ori_index = ori_index;
+    Send_Partial(ts, true, cmd, kvs);
+    return ts;
+  }
+
   /**
    * \brief zero-copy Pull
    *
@@ -203,6 +257,8 @@ class KVWorker : public SimpleApp {
     return Pull_(keys, vals, lens, cmd, cb);
   }
   using SlicedKVs = std::vector<std::pair<bool, KVPairs<Val>>>;
+
+  using SlicedKVs_Partial = std::vector<std::pair<bool, KVPairs_Partial<Val>>>;
   /**
    * \brief a slicer partitions a key-value list according to the key ranges
    * \param send the kv list for partitioning
@@ -214,6 +270,9 @@ class KVWorker : public SimpleApp {
       const KVPairs<Val>& send, const std::vector<Range>& ranges,
       SlicedKVs* sliced)>;
 
+  using Slicer_Partial = std::function<void(
+      const KVPairs<Val>& send, const std::vector<Range>& ranges,
+      SlicedKVs_Partial* sliced)>;
   /**
    * \brief set a user-defined slicer
    */
@@ -221,6 +280,9 @@ class KVWorker : public SimpleApp {
     CHECK(slicer); slicer_ = slicer;
   }
 
+  void set_slicer_partial(const Slicer& slicer) {
+    CHECK(slicer); slicer_partial_ = slicer;
+  }
  private:
   /**
    * \brief internal pull, C/D can be either SArray or std::vector
@@ -251,12 +313,18 @@ class KVWorker : public SimpleApp {
    * @param cmd command
    */
   void Send(int timestamp, bool push, int cmd, const KVPairs<Val>& kvs);
+
+  void Send_Partial(int timestamp, bool push, int cmd, const KVPairs_Partial<Val>& kvs);
   /** \brief internal receive handle */
   void Process(const Message& msg);
   /** \brief default kv slicer */
   void DefaultSlicer(const KVPairs<Val>& send,
                      const std::vector<Range>& ranges,
                      SlicedKVs* sliced);
+
+  void DefaultSlicer_Partial(const KVPairs_Partial<Val>& send,
+                     const std::vector<Range>& ranges,
+                     SlicedKVs_Partial* sliced);
 
   /** \brief data buffer for received kvs for each timestamp */
   std::unordered_map<int, std::vector<KVPairs<Val>>> recv_kvs_;
@@ -266,6 +334,8 @@ class KVWorker : public SimpleApp {
   std::mutex mu_;
   /** \brief kv list slicer */
   Slicer slicer_;
+
+  Slicer_Partial slicer_partial_;
 };
 
 /** \brief meta information about a kv request */
@@ -307,11 +377,19 @@ class KVServer : public SimpleApp {
   using ReqHandle = std::function<void(const KVMeta& req_meta,
                                        const KVPairs<Val>& req_data,
                                        KVServer* server)>;
+  using Req_PartialHandle = std::function<void(const KVMeta& req_meta,
+                                       const KVPairs_Partial<Val>& req_data,
+                                       KVServer* server)>;
+
   void set_request_handle(const ReqHandle& request_handle) {
     CHECK(request_handle) << "invalid request handle";
     request_handle_ = request_handle;
   }
 
+  void set_request_partial_handle(const Req_PartialHandle& request_handle) {
+    CHECK(request_handle) << "invalid request partial handle";
+    request_partial_handle_ = request_handle;
+  }
   /**
    * \brief response to the push/pull request
    * \param req the meta-info of the request
@@ -324,6 +402,7 @@ class KVServer : public SimpleApp {
   void Process(const Message& msg);
   /** \brief request handle */
   ReqHandle request_handle_;
+  Req_PartialHandle request_partial_handle_;
 };
 
 
@@ -367,20 +446,36 @@ void KVServer<Val>::Process(const Message& msg) {
   meta.push      = msg.meta.push;
   meta.sender    = msg.meta.sender;
   meta.timestamp = msg.meta.timestamp;
-  KVPairs<Val> data;
+
   int n = msg.data.size();
-  if (n) {
-    CHECK_GE(n, 2);
+  if (meta.cmd != 1)
+  {
+    CHECK_EQ(meta.cmd, 0) << "the meta.cmd must be 0 when doing normal push";
+    KVPairs<Val> data;
+    if (n) {
+      CHECK_GE(n, 2);
+      data.keys = msg.data[0];
+      data.vals = msg.data[1];
+      if (n > 2) {
+        CHECK_EQ(n, 3);
+        data.lens = msg.data[2];
+        CHECK_EQ(data.lens.size(), data.keys.size());
+      }
+    }
+    CHECK(request_handle_);
+    request_handle_(meta, data, this);
+  } else if (meta.cmd == 1) {
+    KVPairs_Partial<Val> data;
+    CHECK_EQ(n, 6) << "The partial info size must be 6";
     data.keys = msg.data[0];
     data.vals = msg.data[1];
-    if (n > 2) {
-      CHECK_EQ(n, 3);
-      data.lens = msg.data[2];
-      CHECK_EQ(data.lens.size(), data.keys.size());
-    }
+    data.lens = msg.data[2];
+    data.ori_lens = msg.data[3];
+    data.ori_shape = msg.data[4];
+    data.ori_index = msg.data[5];
+    CHECK(request_partial_handle_);
+    request_partial_handle_(meta, data, this);
   }
-  CHECK(request_handle_);
-  request_handle_(meta, data, this);
 }
 
 template <typename Val>
@@ -460,6 +555,83 @@ void KVWorker<Val>::DefaultSlicer(
 }
 
 template <typename Val>
+void KVWorker<Val>::DefaultSlicer_Partial(
+    const KVPairs_Partial<Val>& send, const std::vector<Range>& ranges,
+    typename KVWorker<Val>::SlicedKVs_Partial* sliced) {
+  sliced->resize(ranges.size());
+
+  // find the positions in msg.key
+  size_t n = ranges.size();
+  std::vector<size_t> pos(n+1);
+
+  const Key* begin = send.keys.begin();
+  const Key* end = send.keys.end();
+  for (size_t i = 0; i < n; ++i) {
+    if (i == 0) {
+      pos[0] = std::lower_bound(begin, end, ranges[0].begin()) - begin;
+      begin += pos[0];
+    } else {
+      CHECK_EQ(ranges[i-1].end(), ranges[i].begin());
+    }
+    size_t len = std::lower_bound(begin, end, ranges[i].end()) - begin;
+    begin += len;
+    pos[i+1] = pos[i] + len;
+
+    // don't send it to severs for empty kv
+    sliced->at(i).first = (len != 0);
+  }
+  CHECK_EQ(pos[n], send.keys.size());
+  if (send.keys.size() <= 1) return;
+
+  // the length of value
+  size_t k = 0, val_begin = 0, val_end = 0, oval_begin = 0, oval_end = 0;
+  SArray<int>& ori_shape = send.ori_shape;
+  SArray<int>& ori_index = send.ori_index;
+  size_t dim = ori_shape[1];
+  size_t ori_size = ori_index.size() * dim;
+  if (!send.lens.empty) ori_size -= send.lens[0];
+
+  CHECK_GT(send.lens.size(), 1) << "The send.lens.size() must be larger than 1";
+
+  CHECK_EQ(send.keys.size(), send.lens.size()) << "The key size must equal lens size";
+
+  CHECK_EQ(send.keys.ori_lens.size(), send.lens.size()) << "The ori_lens size must equal lens size";
+
+  // slice
+  for (size_t i = 0; i < n; ++i) {
+    if (pos[i+1] == pos[i]) {
+      sliced->at(i).first = false;
+      continue;
+    }
+    sliced->at(i).first = true;
+    auto& kv = sliced->at(i).second;
+    kv.keys = send.keys.segment(pos[i], pos[i+1]);
+    kv.ori_shape.resize(2);
+    kv.ori_shape[1] = dim;
+    if (send.lens.size()) {
+      kv.lens = send.lens.segment(pos[i], pos[i+1]);
+      for (int l : kv.lens) val_end += l;
+      kv.vals = send.vals.segment(val_begin, val_end);
+      int row_begin = val_begin / dim;
+      int row_end = val_end / dim;
+      kv.ori_index = send.ori_index.segment(row_begin, row_end);
+
+      kv.ori_lens = send.ori_lens.segment(pos[i], pos[i+1]);
+      for (int l : kv.ori_lens) oval_end += l;
+      int orow_begin = oval_begin / dim;
+      int orow_end = oval_end / dim;
+      kv.ori_shape[0] = orow_end - orow_begin;
+
+      for (int& idx : kv.ori_index) idx -= orow_begin;
+
+      val_begin = val_end;
+      oval_begin = oval_end;
+    } else {
+    }
+  }
+}
+
+template <typename Val>
 void KVWorker<Val>::Send(int timestamp, bool push, int cmd, const KVPairs<Val>& kvs) {
   // slice the message
   SlicedKVs sliced;
@@ -497,6 +669,45 @@ void KVWorker<Val>::Send(int timestamp, bool push, int cmd, const KVPairs<Val>& 
   }
 }
 
+
+template <typename Val>
+void KVWorker<Val>::Send_Partial(int timestamp, bool push, int cmd, const KVPairs_Partial<Val>& kvs) {
+  // slice the message
+  SlicedKVs sliced;
+  slicer_partial_(kvs, Postoffice::Get()->GetServerKeyRanges(), &sliced);
+
+  // need to add response first, since it will not always trigger the callback
+  int skipped = 0;
+  for (size_t i = 0; i < sliced.size(); ++i) {
+    if (!sliced[i].first) ++skipped;
+  }
+  obj_->AddResponse(timestamp, skipped);
+  if ((size_t)skipped == sliced.size()) {
+    RunCallback(timestamp);
+  }
+
+  for (size_t i = 0; i < sliced.size(); ++i) {
+    const auto& s = sliced[i];
+    if (!s.first) continue;
+    Message msg;
+    msg.meta.customer_id = obj_->id();
+    msg.meta.request     = true;
+    msg.meta.push        = push;
+    msg.meta.head        = cmd;
+    msg.meta.timestamp   = timestamp;
+    msg.meta.recver      = Postoffice::Get()->ServerRankToID(i);
+    const auto& kvs = s.second;
+    if (kvs.keys.size()) {
+      msg.AddData(kvs.keys);
+      msg.AddData(kvs.vals);
+      msg.AddData(kvs.lens);
+      msg.AddData(kvs.ori_lens);
+      msg.AddData(kvs.ori_shape);
+      msg.AddData(kvs.ori_index);
+    }
+    Postoffice::Get()->van()->Send(msg);
+  }
+}
 
 template <typename Val>
 void KVWorker<Val>::Process(const Message& msg) {

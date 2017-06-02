@@ -300,6 +300,8 @@ class KVStore {
    * \brief whether to do barrier when finalize
    */
   std::atomic<bool> barrier_before_exit_{true};
+
+  using Intlist = std::vector<int>;
 };
 
 }  // namespace mxnet

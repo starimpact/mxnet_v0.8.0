@@ -75,6 +75,14 @@ class KVStoreDist : public KVStoreLocal {
     }
   }
 
+  void Push_Partial(const std::vector<int>& keys,
+            const std::vector<NDArray>& values,
+            const std::vector<TShape>& ori_shapes,
+            const std::vector<Intlist>& ori_indexes,
+            int priority) override {
+    Push_Partial_(keys, values, ori_shapes, ori_indexes, priority, true);
+  }
+
   void Push(const std::vector<int>& keys,
             const std::vector<NDArray>& values,
             int priority) override {
@@ -178,6 +186,67 @@ class KVStoreDist : public KVStoreLocal {
   }
 
  private:
+  void Push_Partial_(const std::vector<int>& keys,
+             const std::vector<NDArray>& values,
+             const std::vector<TShape>& ori_shapes,
+             const std::vector<Intlist>& ori_indexes,
+             int priority,
+             bool do_merge)  {
+    // first aggregate the values over keys
+    std::vector<int> uniq_keys;
+    std::vector<std::vector<NDArray> > grouped_vals;
+    std::vector<TShape> grouped_ori_shapes;
+    std::vector<Intlist> grouped_ori_indexes;
+    GroupKVPairs_Partial(keys, values, &uniq_keys, &grouped_vals, &grouped_ori_shapes, &grouped_ori_indexes);
+
+    for (size_t i = 0; i < uniq_keys.size(); ++i) {
+      // merge over devcies
+      int key = uniq_keys[i];
+      const auto& vals = grouped_vals[i];
+      const TShape& ori_shape = grouped_ori_shapes[i];
+      const Intlist& ori_index = grouped_ori_indexes[i];
+      // check index order
+      for (int idx = 0; idx < ori_index.size() - 1; idx++)
+      {
+        CHECK_LT(ori_index[idx], ori_index[idx+1]) << "The original indexes and related data must be ascending sorted";
+      }
+      NDArray merged = do_merge ? comm_->Reduce(key, vals, priority) : vals[0];
+
+      auto& send_buf = comm_buf_[key];
+      if (merged.ctx().dev_mask() == cpu::kDevMask) {
+        send_buf = merged;  // avoid memory copy
+      } else {
+        if (send_buf.is_none()) {
+          send_buf = NDArray(merged.shape(), pinned_ctx_);
+        }
+        CopyFromTo(merged, &send_buf);
+      }
+
+      // push to servers
+      size_t size = send_buf.shape().Size();
+      real_t* data = static_cast<real_t*>(send_buf.data().dptr_);
+      auto push_to_servers =
+          [this, key, data, size](RunContext rctx, Engine::CallbackOnComplete cb) {
+         // convert to ps keys
+        PSKV& pskv = EncodeKey_Partial(key, ori_shape, ori_index);
+
+        // do push. false means no delete
+        ps::SArray<real_t> vals(data, size, false);
+        auto shape2d = ori_shape.FlatTo2D();
+        ps::SArray<int> ori_shape0(shape2d.shape_, 2, false);
+        ps::SArray<int> ori_index0(ori_index.data(), ori_index.size(), false);
+        CHECK_NOTNULL(ps_worker_)->ZPush_Partial(
+        pskv.keys, vals, ori_shape0, ori_index0, pskv.lens, pskv.ori_lens, 1, [cb]() { cb(); });
+      };
+      Engine::Get()->PushAsync(
+          push_to_servers,
+          pinned_ctx_,
+          {send_buf.var()},
+          {},
+          FnProperty::kNormal, priority);
+    }
+  }
+
   void Push_(const std::vector<int>& keys,
              const std::vector<NDArray>& values,
              int priority,
@@ -241,6 +310,7 @@ class KVStoreDist : public KVStoreLocal {
   struct PSKV {
     ps::SArray<ps::Key> keys;  // n keys
     ps::SArray<int> lens;  // the length of the i-th value
+    ps::SArray<int> ori_lens;
     int size;
   };
 
@@ -290,6 +360,73 @@ class KVStoreDist : public KVStoreLocal {
           pskv.keys.push_back(ps_key);
           pskv.lens.push_back(part_size);
           pskv.size += part_size;
+        }
+        CHECK_EQ(static_cast<size_t>(pskv.size), size);
+      }
+    }
+    return pskv;
+  }
+
+  inline PSKV& EncodeKey_Partial(int key,
+                                 const TShape& ori_shape,
+                                 const Intlist& ori_index) {
+    mu_.lock();
+    PSKV& pskv = ps_kv_[key];
+    mu_.unlock();
+
+
+    if (!pskv.keys.empty()) {
+      CHECK_EQ(static_cast<size_t>(pskv.size), size) << "The value size cannot be changed";
+    } else {
+      auto krs = ps::Postoffice::Get()->GetServerKeyRanges();
+      int num_servers = krs.size();
+      CHECK_GT(num_servers, 0);
+
+      auto shape2d = ori_shape.FlatTo2D();
+      size_t rownum = shape2d[0];
+      size_t dimnum = shape2d[1];
+
+      size_t size = ori_index.size() * dimnum;
+
+      const int* oribegin = ori_index.begin();
+      const int* oritail = ori_index.end();
+      // push a negative key
+      pskv.keys.push_back(0);
+      pskv.size = 0;
+      // find end of negative row
+      int realstart = std::lower_bound(oribegin, oritail, 0) - oribegin;
+      pskv.lens.push_back(realstart * dimnum);
+      pskv.ori_lens.push_back(0);
+      pskv.size += realstart * dimnum;
+
+      size_t partial_rownum = ori_index.size();
+
+      // a simple heuristic for load balance
+      if (size < bigarray_bound_) {
+        // send it to a single random picked server
+        int server = (key * 9973) % num_servers;
+        ps::Key ps_key = krs[server].begin() + key;
+        CHECK_LT(ps_key, krs[server].end());
+        pskv.keys.push_back(ps_key);
+        pskv.lens.push_back(size - realstart * dimnum);
+        pskv.ori_lens.push_back(rownum * dimnum);
+        pskv.size += size - realstart * dimnum;
+      } else {
+        // parition it to all servers
+        for (int i = 0; i < num_servers; ++i) {
+          size_t part_size =
+              static_cast<size_t>(static_cast<double>(rownum)/num_servers*(i+1)) -
+              static_cast<size_t>(static_cast<double>(rownum)/num_servers*i);
+          CHECK_GT(part_size, 0) << "part_size must be larger than 0";
+          pskv.ori_lens.push_back(part_size * dimnum);
+          ps::Key ps_key = krs[i].begin() + key;
+          CHECK_LT(ps_key, krs[i].end());
+          pskv.keys.push_back(ps_key);
+          int realpart_end = std::upper_bound(oribegin, oritail, part_size-1);
+          int realpart_size = realpart_end - realstart;
+          pskv.lens.push_back(realpart_size * dimnum);
+          pskv.size += realpart_size * dimnum;
+          realstart = realpart_end;
         }
         CHECK_EQ(static_cast<size_t>(pskv.size), size);
       }

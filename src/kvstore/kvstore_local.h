@@ -118,6 +118,41 @@ class KVStoreLocal : public KVStore {
       }
     }
   }
+
+  template <typename V>
+  void GroupKVPairs_Partial(const std::vector<int>& keys,
+                    const std::vector<V>& values,
+                    const std::vector<TShape>& ori_shapes,
+                    const std::vector<std::vector<int>>& ori_indexes,
+                    std::vector<int>* uniq_keys,
+                    std::vector<std::vector<V> >* grouped_vals,
+                    std::vector<TShape>* grouped_ori_shapes,
+                    std::vector<Intlist>* grouped_ori_indexes) {
+    CHECK_EQ(keys.size(), values.size());
+    // TODO(mli) check if already sorted as an optimization
+    using Idx = std::pair<int, int>;
+    std::vector<Idx> idx(keys.size());
+    for (size_t i = 0; i < keys.size(); ++i) {
+      idx[i].first = keys[i]; idx[i].second = i;
+    }
+    std::sort(idx.begin(), idx.end(), [](const Idx& a, const Idx& b) {
+        return a.first < b.first;
+      });
+
+    int pre_key = idx[0].first - 1;
+    for (auto i : idx) {
+      if (i.first != pre_key) {
+        uniq_keys->push_back(i.first);
+        grouped_vals->push_back({values[i.second]});
+        grouped_ori_shapes->push_back(ori_shapes[i.second]);
+        grouped_ori_indexes->push_back(ori_indexes[i.second]);
+        pre_key = i.first;
+      } else {
+        grouped_vals->back().push_back(values[i.second]);
+      }
+    }
+  }
+
   /// reducer and broadcaster
   Comm* comm_;
   /// pinned context

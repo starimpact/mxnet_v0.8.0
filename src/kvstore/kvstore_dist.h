@@ -55,6 +55,28 @@ class KVStoreDist : public KVStoreLocal {
     }
   }
 
+  void Init_Partial(const std::vector<int>& keys,
+            const std::vector<NDArray>& values,
+            const std::vector<TShape>& ori_shapes,
+            const std::vector<Intlist>& ori_indexes) override {
+    CheckUnique(keys);
+    for (size_t i = 0; i < keys.size(); ++i) {
+      comm_->Init(keys[i], values[i].shape());
+    }
+    if (get_rank() == 0) {
+      Push_Partial_(keys, values, ori_shapes, ori_indexs, 0, false);
+      // wait until the push is finished
+      for (const auto& v : values) {
+        v.WaitToWrite();
+      }
+    } else {
+      // do nothing
+    }
+    if (!ps::Postoffice::Get()->is_recovery()) {
+      Barrier();
+    }
+  }
+
   void Init(const std::vector<int>& keys,
             const std::vector<NDArray>& values) override {
     CheckUnique(keys);
@@ -87,6 +109,48 @@ class KVStoreDist : public KVStoreLocal {
             const std::vector<NDArray>& values,
             int priority) override {
     Push_(keys, values, priority, true);
+  }
+
+  void Pull_Partial(const std::vector<int>& keys,
+            const std::vector<NDArray*>& values,
+            const std::vector<Intlist>& ori_indexes,
+            int priority) override {
+    std::vector<int> uniq_keys;
+    std::vector<std::vector<NDArray*> > grouped_vals;
+    GroupKVPairs(keys, values, &uniq_keys, &grouped_vals);
+
+    for (size_t i = 0; i < uniq_keys.size(); ++i) {
+      int key = uniq_keys[i];
+      // use the same array for merging to guarantee that pull always happens
+      // after the previous push on this key
+      auto& recv_buf = comm_buf_[key];
+      if (recv_buf.is_none()) {
+        // it may happen for the first time a no-rank-0 worker pull the weight.
+        recv_buf = NDArray(grouped_vals[i][0]->shape(), pinned_ctx_);
+      }
+      real_t* data = static_cast<real_t*>(recv_buf.data().dptr_);
+      size_t size = recv_buf.shape().Size();
+
+      auto pull_from_servers = [this, key, data, size](
+          RunContext rctx, Engine::CallbackOnComplete cb) {
+        // convert to ps keys
+        PSKV& pskv = EncodeKey(key, size);
+
+        // issue pull, false means no delete
+        auto vals = new ps::SArray<real_t>(data, size, false);
+        CHECK_NOTNULL(ps_worker_)->ZPull(
+        pskv.keys, vals, &pskv.lens, 0, [vals, cb](){ delete vals; cb(); });
+      };
+
+      CHECK_NOTNULL(Engine::Get())->PushAsync(
+          pull_from_servers,
+          pinned_ctx_,
+          {},
+          {recv_buf.var()},
+          FnProperty::kNormal, priority);
+
+      comm_->Broadcast(key, recv_buf, grouped_vals[i], priority);
+    }
   }
 
   void Pull(const std::vector<int>& keys,
@@ -197,7 +261,8 @@ class KVStoreDist : public KVStoreLocal {
     std::vector<std::vector<NDArray> > grouped_vals;
     std::vector<TShape> grouped_ori_shapes;
     std::vector<Intlist> grouped_ori_indexes;
-    GroupKVPairs_Partial(keys, values, &uniq_keys, &grouped_vals, &grouped_ori_shapes, &grouped_ori_indexes);
+    GroupKVPairs_Partial(keys, values, ori_shapes, ori_indexs,
+        &uniq_keys, &grouped_vals, &grouped_ori_shapes, &grouped_ori_indexes);
 
     for (size_t i = 0; i < uniq_keys.size(); ++i) {
       // merge over devcies

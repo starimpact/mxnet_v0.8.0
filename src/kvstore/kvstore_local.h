@@ -57,6 +57,10 @@ class KVStoreLocal : public KVStore {
       local_[keys[i]] = NDArray(ori_shapes[i], pinned_ctx_);
       local_partial_[keys[i]] = values[i].Copy(pinned_ctx_);
       CopyFromTo_IndexTo(local_partial_[keys[i]], &local_[keys[i]], ori_indexes[i]);
+
+      states_[keys[i]] = NDArray(ori_shapes[i], pinned_ctx_);
+      states_partial_[keys[i]] = NDArray(values[i].shape(), pinned_ctx_);
+      CopyFromTo_IndexTo(local_partial_[keys[i]], &states_[keys[i]], ori_indexes[i]);
       comm_->Init(keys[i], values[i].shape());
     }
   }
@@ -80,16 +84,22 @@ class KVStoreLocal : public KVStore {
       const NDArray& merged = comm_->Reduce(key, grouped_vals[i], priority);
       NDArray& local = local_[key];
       NDArray& local_partial = local_partial_[key];
+      NDArray& state = states_[key];
+      NDArray& state_partial = states_partial_[key];
       if (updater_ != nullptr) {
         CHECK(!local.is_none()) << "key " << key << " has not been inited";
         // if merged is on gpu, we may need copy weight from cpu to gpu
         if (merged.ctx().dev_mask() != cpu::kDevMask &&
-            local.ctx().dev_mask() == cpu::kDevMask) {
-          local = local.Copy(merged.ctx());
+            local_partial.ctx().dev_mask() == cpu::kDevMask) {
+          local_partial = local_partial.Copy(merged.ctx());
         }
         CopyFromTo_IndexFrom(local, &local_partial, ori_index);
-        updater_(key, merged, &local_partial);
+        CopyFromTo_IndexFrom(state, &state_partial, ori_index);
+
+        partial_updater_(key, merged, &local_partial, &state_partial);
+
         CopyFromTo_IndexTo(local_partial, &local, ori_index);
+        CopyFromTo_IndexTo(state_partial, &state, ori_index);
       } else {
         CopyFromTo_IndexTo(merged, &local, ori_index);
       }
@@ -208,7 +218,9 @@ class KVStoreLocal : public KVStore {
   Context pinned_ctx_;
   /// \brief buffer for storing local values
   std::unordered_map<int, NDArray> local_;
+  std::unordered_map<int, NDArray> states_;
   std::unordered_map<int, NDArray> local_partial_;
+  std::unordered_map<int, NDArray> states_partial_;
 };
 }  // namespace kvstore
 }  // namespace mxnet

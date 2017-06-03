@@ -821,3 +821,23 @@ def get_updater(optimizer):
             states[index] = optimizer.create_state(index, weight)
         optimizer.update(index, weight, grad, states[index])
     return updater
+
+
+def get_partial_updater(optimizer):
+    """Return a clossure of the updater needed for kvstore
+
+    Parameters
+    ----------
+    optimizer: Optimizer
+         The optimizer
+
+    Returns
+    -------
+    updater: function
+         The clossure of the updater
+    """
+    def updater(index, grad, weight, state):
+        """updater for kvstore"""
+        optimizer.update(index, weight, grad, state)
+
+    return updater

@@ -106,7 +106,13 @@ class KVStore {
    */
   virtual void Push(const std::vector<int>& keys,
                     const std::vector<NDArray>& values,
-                    int priority = 0)  = 0;
+                    int priority = 0) = 0;
+
+  virtual void Push_Partial(const std::vector<int>& keys,
+            const std::vector<NDArray>& values,
+            const std::vector<TShape>& ori_shapes,
+            const std::vector<Intlist>& ori_indexes,
+            int priority = 0) = 0;
   /*!
    * \brief pull a list of key-value pairs from the store
    *
@@ -138,6 +144,13 @@ class KVStore {
    * \brief the prototype of user-defined updater
    */
   typedef std::function<void(int, const NDArray&, NDArray*)> Updater;
+
+
+  /**
+   * user-defined Partial Weight Updater
+   * 0:key, 1:grad, 2:weight, 3:states
+   */
+  typedef std::function<void(int, const NDArray&, NDArray*, NDArray*)> Partial_Updater;
   /*!
    * \brief set an updater
    *
@@ -152,6 +165,10 @@ class KVStore {
     updater_ = updater;
   }
 
+  virtual void set_partial_updater(const Partial_Updater& updater) {
+    CHECK(updater) << "invalid partial updater";
+    partial_updater_ = updater;
+  }
   /******************************************************
    * the following are used for multi-machines.
    ******************************************************/
@@ -295,6 +312,8 @@ class KVStore {
    * \brief the user-defined  updater
    */
   Updater updater_;
+
+  Partial_Updater partial_updater_;
 
   /**
    * \brief the kvstore type

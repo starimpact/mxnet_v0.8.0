@@ -241,18 +241,21 @@ class KVStoreDistServer {
 
     int key = DecodeKey(req_data.keys[0]);
     auto& stored = store_[key];
+    auto& state = sates_[key];
+
     vector<int> ori_index(req_data.ori_index.begin(), req_data.ori_index.end());
+
+    TShape rsv_dshape(2), store_dshape(2);
+
+    rsv_dshape[0] = req_data.lens[0] / dim;
+    rsv_dshape[1] = dim;
+    store_dshape[0] = ori_row;
+    store_dshape[1] = dim;
 
     // there used several WaitToRead, this is because \a recved's memory
     // could be deallocated when this function returns. so we need to make sure
     // the operators with \a NDArray are actually finished
     if (req_meta.push) {
-      TShape rsv_dshape(2), store_dshape(2);
-      rsv_dshape[0] = req_data.lens[0] / dim;
-      rsv_dshape[1] = dim;
-      store_dshape[0] = ori_row;
-      store_dshape[1] = dim;
-
       TBlob recv_blob((real_t*)req_data.vals.data(), // NOLINT(*)
                       dshape, cpu::kDevMask);
       NDArray recved = NDArray(recv_blob, 0);
@@ -303,10 +306,15 @@ class KVStoreDistServer {
         }
       } else {
         // async push
-        CopyFromTo_IndexTo(recved, &merged.array_tmp, ori_index, 0);
-        exec_.Exec([this, key, &merged, &stored](){
-            CHECK(updater_);
-            updater_(key, merged.array_tmp, &stored);
+        NDArray store_partial(rsv_dshape, Context());
+        NDArray state_partial(rsv_dshape, Context());
+        NDArray grad_partial(rsv_dshape, Context());
+        CopyFromTo_IndexFrom(state, &state_partial, ori_index, 0);
+        CopyFromTo_IndexFrom(stored, &store_partial, ori_index, 0);
+        CopyFromTo(recved, &grad_partial, 0);
+        exec_.Exec([this, key, &grad_partial, &store_partial, &state_partial](){
+            CHECK(partial_updater_);
+            partial_updater_(key, grad_partial, &store_partial, &state_partial);
           });
         server->Response(req_meta);
         stored.WaitToRead();
@@ -335,8 +343,10 @@ class KVStoreDistServer {
   bool sync_mode_;
   KVStore::Controller controller_;
   KVStore::Updater updater_;
+  KVStore::Partial_Updater partial_updater_;
 
   std::unordered_map<int, NDArray> store_;
+  std::unordered_map<int, NDArray> states_;
 
   struct MergeBuf {
     std::vector<ps::KVMeta> request;

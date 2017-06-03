@@ -63,6 +63,11 @@ class KVStore {
    */
   virtual void Init(const std::vector<int>& keys,
                     const std::vector<NDArray>& values) = 0;
+
+  virtual void Init_Partial(const std::vector<int>& keys,
+                    const std::vector<NDArray>& values,
+                    const std::vector<TShape>& ori_shapes,
+                    const std::vector<Intlist>& ori_indexes) = 0;
   /*!
    * \brief push a list of key-value pairs into the store
    *

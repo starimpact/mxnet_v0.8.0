@@ -47,6 +47,55 @@ class KVStoreLocal : public KVStore {
     }
   }
 
+  void Init_Partial(const std::vector<int>& keys,
+            const std::vector<NDArray>& values,
+            const std::vector<TShape>& ori_shapes,
+            const std::vector<Intlist>& ori_indexes) override {
+    for (size_t i = 0; i < keys.size(); ++i) {
+      CHECK(local_.find(keys[i]) == local_.end())
+          << "duplicate init of key " << keys[i];
+      local_[keys[i]] = NDArray(ori_shapes[i], pinned_ctx_);
+      local_partial_[keys[i]] = values[i].Copy(pinned_ctx_);
+      CopyFromTo_IndexTo(local_partial_[keys[i]], &local_[keys[i]], ori_indexes[i]);
+      comm_->Init(keys[i], values[i].shape());
+    }
+  }
+
+  void Push_Partial(const std::vector<int>& keys,
+            const std::vector<NDArray>& values,
+            const std::vector<TShape>& ori_shapes,
+            const std::vector<Intlist>& ori_indexes,
+            int priority) override {
+    std::vector<int> uniq_keys;
+    std::vector<std::vector<NDArray> > grouped_vals;
+    std::vector<TShape> grouped_ori_shapes;
+    std::vector<Intlist> grouped_ori_indexes;
+    GroupKVPairs_Partial(keys, values, ori_shapes, ori_indexs,
+        &uniq_keys, &grouped_vals, &grouped_ori_shapes, &grouped_ori_indexes);
+
+    for (size_t i = 0; i < uniq_keys.size(); ++i) {
+      int key = uniq_keys[i];
+      const TShape& ori_shape = grouped_ori_shapes[i];
+      const Intlist& ori_index = grouped_ori_indexes[i];
+      const NDArray& merged = comm_->Reduce(key, grouped_vals[i], priority);
+      NDArray& local = local_[key];
+      NDArray& local_partial = local_partial_[key];
+      if (updater_ != nullptr) {
+        CHECK(!local.is_none()) << "key " << key << " has not been inited";
+        // if merged is on gpu, we may need copy weight from cpu to gpu
+        if (merged.ctx().dev_mask() != cpu::kDevMask &&
+            local.ctx().dev_mask() == cpu::kDevMask) {
+          local = local.Copy(merged.ctx());
+        }
+        CopyFromTo_IndexFrom(local, &local_partial, ori_index);
+        updater_(key, merged, &local);
+        CopyFromTo_IndexTo(local_partial, &local, ori_index);
+      } else {
+        CopyFromTo_IndexTo(merged, &local, ori_index);
+      }
+    }
+  }
+
   void Push(const std::vector<int>& keys,
             const std::vector<NDArray>& values,
             int priority) override {
@@ -159,6 +208,7 @@ class KVStoreLocal : public KVStore {
   Context pinned_ctx_;
   /// \brief buffer for storing local values
   std::unordered_map<int, NDArray> local_;
+  std::unordered_map<int, NDArray> local_partial_;
 };
 }  // namespace kvstore
 }  // namespace mxnet

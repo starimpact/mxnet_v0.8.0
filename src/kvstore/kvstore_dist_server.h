@@ -15,6 +15,7 @@
 #include <vector>
 #include "ps/ps.h"
 #include "mxnet/kvstore.h"
+#include "./comm.h"
 
 namespace mxnet {
 namespace kvstore {
@@ -220,26 +221,6 @@ class KVStoreDistServer {
     }
   }
 
-  // copy ndfrom to the indexto positions of ndto.
-  void CopyFromTo_IndexTo(NDArray& ndfrom, NDArray *ndto, SArray<int>& indexto, int priority = 0) {
-    TShape& shapefrom = ndfrom.shape();
-    CHECK_EQ(shapefrom[0], indexto.size());
-    for (int idx = 0; idx < shapefrom[0]; idx++) {
-      int idxto = indexto[idx];
-      CopyFromTo(ndfrom.At(idx), &ndto->At(idxto), priority);
-    }
-  }
-
-  // copy data of indexfrom positions of ndfrom to ndto.
-  void CopyFromTo_IndexFrom(NDArray& ndfrom, NDArray *ndto, SArray<int>& indexfrom, int priority = 0) {
-    TShape& shapeto = ndto->shape();
-    CHECK_EQ(shapeto[0], indexto.size());
-    for (int idx = 0; idx < shapeto[0]; idx++) {
-      int idxfrom = indexfrom[idx];
-      CopyFromTo(ndfrom.At(idxfrom), &ndto->At(idx), priority);
-    }
-  }
-
   void DataHandle_Partial(const ps::KVMeta& req_meta,
                   const ps::KVPairs_Partial<real_t>& req_data,
                   ps::KVServer<real_t>* server) {
@@ -260,7 +241,7 @@ class KVStoreDistServer {
 
     int key = DecodeKey(req_data.keys[0]);
     auto& stored = store_[key];
-    SArray& ori_index = req_data.ori_index;
+    vector<int> ori_index(req_data.ori_index.begin(), req_data.ori_index.end());
 
     // there used several WaitToRead, this is because \a recved's memory
     // could be deallocated when this function returns. so we need to make sure

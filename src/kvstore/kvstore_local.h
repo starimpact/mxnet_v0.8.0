@@ -88,7 +88,7 @@ class KVStoreLocal : public KVStore {
           local = local.Copy(merged.ctx());
         }
         CopyFromTo_IndexFrom(local, &local_partial, ori_index);
-        updater_(key, merged, &local);
+        updater_(key, merged, &local_partial);
         CopyFromTo_IndexTo(local_partial, &local, ori_index);
       } else {
         CopyFromTo_IndexTo(merged, &local, ori_index);

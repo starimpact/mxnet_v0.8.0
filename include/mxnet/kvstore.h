@@ -17,6 +17,9 @@
 #endif  // MXNET_USE_DIST_KVSTORE
 
 namespace mxnet {
+
+using Intlist = std::vector<int>;
+
 /*!
  * \brief distributed key-value store
  *
@@ -142,6 +145,8 @@ class KVStore {
 
   virtual void Pull_Partial(const std::vector<int>& keys,
                     const std::vector<NDArray*>& values,
+                    const std::vector<TShape>& ori_shapes,
+                    const std::vector<Intlist>& ori_indexes,
                     int priority = 0) = 0;
   /**
    * \brief the prototype of user-defined updater
@@ -327,8 +332,6 @@ class KVStore {
    * \brief whether to do barrier when finalize
    */
   std::atomic<bool> barrier_before_exit_{true};
-
-  using Intlist = std::vector<int>;
 };
 
 }  // namespace mxnet

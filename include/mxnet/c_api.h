@@ -1140,7 +1140,6 @@ MXNET_DLL int MXKVStoreInit(KVStoreHandle handle,
                             mx_uint num,
                             const int* keys,
                             NDArrayHandle* vals);
-
 /*!
  * \brief Push a list of (key,value) pairs to kvstore
  * \param handle handle to the kvstore
@@ -1181,6 +1180,7 @@ typedef void (MXKVStoreUpdater)(int key,
                                 NDArrayHandle recv,
                                 NDArrayHandle local,
                                 void *handle);
+
 /*!
  * \brief register an push updater
  * \param handle handle to the KVStore
@@ -1191,6 +1191,48 @@ typedef void (MXKVStoreUpdater)(int key,
 MXNET_DLL int MXKVStoreSetUpdater(KVStoreHandle handle,
                                   MXKVStoreUpdater updater,
                                   void *updater_handle);
+
+
+//--------------------------------------------
+// Partial weight related APIs
+//--------------------------------------------
+
+// ori_shapes: num * 2
+// ori_indexes offset: 0, offset0, offset1...
+MXNET_DLL int MXKVStoreInitPartial(KVStoreHandle handle,
+                                   mx_uint num,
+                                   const int* keys,
+                                   NDArrayHandle* vals,
+                                   int* ori_shapes,
+                                   int* ori_indexes);
+// ori_shapes: num * 2
+// ori_indexes offset: 0, offset0, offset1...
+MXNET_DLL int MXKVStorePushPartial(KVStoreHandle handle,
+                                   mx_uint num,
+                                   const int* keys,
+                                   NDArrayHandle* vals,
+                                   int* ori_shapes,
+                                   int* ori_indexes,
+                                   int priority);
+// ori_shapes: num * 2
+// ori_indexes offset: 0, offset0, offset1...
+MXNET_DLL int MXKVStorePullPartial(KVStoreHandle handle,
+                                   mx_uint num,
+                                   const int* keys,
+                                   NDArrayHandle* vals,
+                                   int* ori_shapes,
+                                   int* ori_indexes,
+                                   int priority);
+
+MXNET_DLL int MXKVStoreSetPartialUpdater(KVStoreHandle handle,
+                                  MXKVStorePartialUpdater updater,
+                                  void *updater_handle);
+
+typedef void (MXKVStorePartialUpdater)(int key,
+                                NDArrayHandle recv,
+                                NDArrayHandle local,
+                                NDArrayHandle state,
+                                void *handle);
 /*!
  * \brief get the type of the kvstore
  * \param handle handle to the KVStore

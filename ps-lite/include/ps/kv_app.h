@@ -256,6 +256,18 @@ class KVWorker : public SimpleApp {
             const Callback& cb = nullptr) {
     return Pull_(keys, vals, lens, cmd, cb);
   }
+
+  int ZPull_Partial(const SArray<Key>& keys,
+            const SArray<int>& ori_shape,
+            const SArray<int>& ori_index,
+            const SArray<int>& ori_lens,
+            SArray<Val>* vals,
+            SArray<int>* lens = nullptr,
+            int cmd = 0,
+            const Callback& cb = nullptr) {
+    return Pull_Partial_(keys, ori_shape, ori_index, ori_lens, vals, lens, cmd, cb);
+  }
+
   using SlicedKVs = std::vector<std::pair<bool, KVPairs<Val>>>;
 
   using SlicedKVs_Partial = std::vector<std::pair<bool, KVPairs_Partial<Val>>>;
@@ -328,6 +340,8 @@ class KVWorker : public SimpleApp {
 
   /** \brief data buffer for received kvs for each timestamp */
   std::unordered_map<int, std::vector<KVPairs<Val>>> recv_kvs_;
+
+  std::unordered_map<int, std::vector<KVPairs_Partial<Val>>> recv_kvs_partial_;
   /** \brief callbacks for each timestamp */
   std::unordered_map<int, Callback> callbacks_;
   /** \brief lock */
@@ -498,6 +512,26 @@ void KVServer<Val>::Response(const KVMeta& req, const KVPairs<Val>& res) {
 }
 
 template <typename Val>
+void KVServer<Val>::Response_Partial(const KVMeta& req, const KVPairs_Partial<Val>& res) {
+  Message msg;
+  msg.meta.customer_id = obj_->id();
+  msg.meta.request     = false;
+  msg.meta.push        = req.push;
+  msg.meta.head        = req.cmd;
+  msg.meta.timestamp   = req.timestamp;
+  msg.meta.recver      = req.sender;
+  if (res.keys.size()) {
+    msg.AddData(res.keys);
+    msg.AddData(res.vals);
+    msg.AddData(res.lens);
+    msg.AddData(res.ori_lens);
+    msg.AddData(res.ori_shape);
+    msg.AddData(res.ori_index);
+  }
+  Postoffice::Get()->van()->Send(msg);
+}
+
+template <typename Val>
 void KVWorker<Val>::DefaultSlicer(
     const KVPairs<Val>& send, const std::vector<Range>& ranges,
     typename KVWorker<Val>::SlicedKVs* sliced) {
@@ -611,7 +645,9 @@ void KVWorker<Val>::DefaultSlicer_Partial(
     if (send.lens.size()) {
       kv.lens = send.lens.segment(pos[i], pos[i+1]);
       for (int l : kv.lens) val_end += l;
-      kv.vals = send.vals.segment(val_begin, val_end);
+      if (send.vals.size() > 0) {
+        kv.vals = send.vals.segment(val_begin, val_end);
+      }
       int row_begin = val_begin / dim;
       int row_end = val_end / dim;
       kv.ori_index = send.ori_index.segment(row_begin, row_end);
@@ -719,15 +755,29 @@ void KVWorker<Val>::Process(const Message& msg) {
   int ts = msg.meta.timestamp;
   if (!msg.meta.push && msg.data.size()) {
     CHECK_GE(msg.data.size(), (size_t)2);
-    KVPairs<Val> kvs;
-    kvs.keys = msg.data[0];
-    kvs.vals = msg.data[1];
-    if (msg.data.size() > (size_t)2) {
+    if (msg.meta.head == 0) {
+      KVPairs<Val> kvs;
+      kvs.keys = msg.data[0];
+      kvs.vals = msg.data[1];
+      if (msg.data.size() > (size_t)2) {
+        kvs.lens = msg.data[2];
+      }
+      mu_.lock();
+      recv_kvs_[ts].push_back(kvs);
+      mu_.unlock();
+    } else if (msg.meta.head == 1) {
+      KVPairs_Partial<Val> kvs;
+      kvs.keys = msg.data[0];
+      kvs.vals = msg.data[1];
       kvs.lens = msg.data[2];
+      kvs.ori_lens = msg.data[3];
+      kvs.ori_shape = msg.data[4];
+      kvs.ori_index = msg.data[5];
+
+      mu_.lock();
+      recv_kvs_partial_[ts].push_back(kvs);
+      mu_.unlock();
     }
-    mu_.lock();
-    recv_kvs_[ts].push_back(kvs);
-    mu_.unlock();
   }
 
   // finished, run callbacks
@@ -735,6 +785,7 @@ void KVWorker<Val>::Process(const Message& msg) {
     RunCallback(ts);
   }
 }
+
 template <typename Val>
 void KVWorker<Val>::RunCallback(int timestamp) {
   mu_.lock();
@@ -811,6 +862,86 @@ int KVWorker<Val>::Pull_(
 
   KVPairs<Val> kvs; kvs.keys = keys;
   Send(ts, false, cmd, kvs);
+  return ts;
+}
+
+template <typename Val>
+template <typename C, typename D>
+int KVWorker<Val>::Pull_Partial_(
+    const SArray<Key>& keys, const SArray<int>& lens, const SArray<int>& ori_shape,
+    const SArray<int>& ori_index, const SArray<int>& ori_lens,
+    C* vals, D* lens, int cmd, const Callback& cb) {
+  int ts = obj_->NewRequest(kServerGroup);
+  AddCallback(ts, [this, ts, keys, vals, lens, cb]() mutable {
+      mu_.lock();
+      auto& kvs = recv_kvs_partial_[ts];
+      mu_.unlock();
+
+      // do check
+      size_t total_key = 0, total_val = 0;
+      for (const auto& s : kvs) {
+        Range range = FindRange(keys, s.keys.front(), s.keys.back()+1);
+        CHECK_EQ(range.size(), s.keys.size())
+            << "unmatched keys size from one server";
+        if (lens) CHECK_EQ(s.lens.size(), s.keys.size());
+        total_key += s.keys.size();
+        total_val += s.vals.size();
+      }
+      CHECK_EQ(total_key + 1, keys.size()) << "keys: lost some servers?";
+
+      int dim = ori_shape[1];
+      const int* oribegin = ori_index.begin();
+      const int* oritail = ori_index.end();
+      // find end of negative row
+      int realstart = std::lower_bound(oribegin, oritail, 0) - oribegin;
+      realstart *= dim;
+      total_val += realstart;
+
+      // fill vals and lens
+      std::sort(kvs.begin(), kvs.end(), [](
+          const KVPairs_Partial<Val>& a, const KVPairs_Partial<Val>& b) {
+                  return a.keys.front() < b.keys.front();
+        });
+      CHECK_NOTNULL(vals);
+      if (vals->empty()) {
+        vals->resize(total_val);
+      } else {
+        CHECK_EQ(vals->size(), total_val);
+      }
+      Val* p_vals = vals->data();
+      int *p_lens = nullptr;
+      if (lens) {
+        if (lens->empty()) {
+          lens->resize(keys.size());
+        } else {
+          CHECK_EQ(lens->size(), keys.size());
+        }
+        p_lens = lens->data();
+      }
+      p_lens[0] = realstart;
+      p_lens++;
+      p_vals += realstart;
+      for (const auto& s : kvs) {
+        memcpy(p_vals, s.vals.data(), s.vals.size() * sizeof(Val));
+        p_vals += s.vals.size();
+        if (p_lens) {
+          memcpy(p_lens, s.lens.data(), s.lens.size() * sizeof(int));
+          p_lens += s.lens.size();
+        }
+      }
+
+      mu_.lock();
+      recv_kvs_partial_.erase(ts);
+      mu_.unlock();
+      if (cb) cb();
+    });
+
+  KVPairs_Partial<Val> kvs;
+  kvs.keys = keys;
+  kvs.ori_shape = ori_shape;
+  kvs.ori_index = ori_index;
+  kvs.ori_lens = ori_lens;
+  Send_Partial(ts, false, cmd, kvs);
   return ts;
 }
 

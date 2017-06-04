@@ -140,6 +140,9 @@ class KVStore {
                     const std::vector<NDArray*>& values,
                     int priority = 0) = 0;
 
+  virtual void Pull_Partial(const std::vector<int>& keys,
+                    const std::vector<NDArray*>& values,
+                    int priority = 0) = 0;
   /**
    * \brief the prototype of user-defined updater
    */

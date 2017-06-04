@@ -113,33 +113,44 @@ class KVStoreDist : public KVStoreLocal {
 
   void Pull_Partial(const std::vector<int>& keys,
             const std::vector<NDArray*>& values,
+            const std::vector<TShape>& ori_shapes,
             const std::vector<Intlist>& ori_indexes,
             int priority) override {
     std::vector<int> uniq_keys;
     std::vector<std::vector<NDArray*> > grouped_vals;
-    GroupKVPairs(keys, values, &uniq_keys, &grouped_vals);
+    std::vector<TShape> grouped_ori_shapes;
+    std::vector<Intlist> grouped_ori_indexes;
+    GroupKVPairs_Partial(keys, values, ori_shapes, ori_indexs,
+        &uniq_keys, &grouped_vals, &grouped_ori_shapes, &grouped_ori_indexes);
 
     for (size_t i = 0; i < uniq_keys.size(); ++i) {
       int key = uniq_keys[i];
+      const auto& vals = grouped_vals[i];
+      const TShape& ori_shape = grouped_ori_shapes[i];
+      const Intlist& ori_index = grouped_ori_indexes[i];
       // use the same array for merging to guarantee that pull always happens
       // after the previous push on this key
       auto& recv_buf = comm_buf_[key];
       if (recv_buf.is_none()) {
         // it may happen for the first time a no-rank-0 worker pull the weight.
-        recv_buf = NDArray(grouped_vals[i][0]->shape(), pinned_ctx_);
+        recv_buf = NDArray(vals[0]->shape(), pinned_ctx_);
       }
       real_t* data = static_cast<real_t*>(recv_buf.data().dptr_);
       size_t size = recv_buf.shape().Size();
 
-      auto pull_from_servers = [this, key, data, size](
+      auto pull_from_servers = [this, key, data, size, ori_shape, ori_index](
           RunContext rctx, Engine::CallbackOnComplete cb) {
         // convert to ps keys
-        PSKV& pskv = EncodeKey(key, size);
+        PSKV& pskv = EncodeKey_Partial(key, ori_shape, ori_index);
 
         // issue pull, false means no delete
         auto vals = new ps::SArray<real_t>(data, size, false);
-        CHECK_NOTNULL(ps_worker_)->ZPull(
-        pskv.keys, vals, &pskv.lens, 0, [vals, cb](){ delete vals; cb(); });
+        auto shape2d = ori_shape.FlatTo2D();
+        ps::SArray<int> ori_shape0(shape2d.shape_, 2, false);
+        ps::SArray<int> ori_index0(ori_index.data(), ori_index.size(), false);
+        CHECK_NOTNULL(ps_worker_)->ZPull_Partial(
+            pskv.keys, pskv.lens, ori_shape0, ori_index0, pskv.ori_lens,
+            &vals, &pskv.lens, 1, [vals, cb](){ delete vals; cb(); });
       };
 
       CHECK_NOTNULL(Engine::Get())->PushAsync(
@@ -172,10 +183,10 @@ class KVStoreDist : public KVStoreLocal {
       real_t* data = static_cast<real_t*>(recv_buf.data().dptr_);
       size_t size = recv_buf.shape().Size();
 
-      auto pull_from_servers = [this, key, data, size](
+      auto pull_from_servers = [this, key, data, size, ori_shape, ori_index](
           RunContext rctx, Engine::CallbackOnComplete cb) {
         // convert to ps keys
-        PSKV& pskv = EncodeKey(key, size);
+        PSKV& pskv = EncodeKey_Partial(key, ori_shape, ori_index);
 
         // issue pull, false means no delete
         auto vals = new ps::SArray<real_t>(data, size, false);
@@ -200,6 +211,15 @@ class KVStoreDist : public KVStoreLocal {
       CHECK_NOTNULL(server_)->set_updater(updater);
     } else {
       updater_ = updater;
+    }
+  }
+
+  void set_partial_updater(const Partial_Updater& updater) override {
+    CHECK(updater) << "invalid updater";
+    if (IsServerNode()) {
+      CHECK_NOTNULL(server_)->set_partial_updater(updater);
+    } else {
+      partial_updater_ = updater;
     }
   }
 
@@ -291,7 +311,7 @@ class KVStoreDist : public KVStoreLocal {
       size_t size = send_buf.shape().Size();
       real_t* data = static_cast<real_t*>(send_buf.data().dptr_);
       auto push_to_servers =
-          [this, key, data, size](RunContext rctx, Engine::CallbackOnComplete cb) {
+          [this, key, data, size, ori_shape, ori_index](RunContext rctx, Engine::CallbackOnComplete cb) {
          // convert to ps keys
         PSKV& pskv = EncodeKey_Partial(key, ori_shape, ori_index);
 
@@ -301,7 +321,8 @@ class KVStoreDist : public KVStoreLocal {
         ps::SArray<int> ori_shape0(shape2d.shape_, 2, false);
         ps::SArray<int> ori_index0(ori_index.data(), ori_index.size(), false);
         CHECK_NOTNULL(ps_worker_)->ZPush_Partial(
-        pskv.keys, vals, ori_shape0, ori_index0, pskv.lens, pskv.ori_lens, 1, [cb]() { cb(); });
+            pskv.keys, vals, ori_shape0, ori_index0, pskv.lens,
+            pskv.ori_lens, 1, [cb]() { cb(); });
       };
       Engine::Get()->PushAsync(
           push_to_servers,
@@ -439,10 +460,11 @@ class KVStoreDist : public KVStoreLocal {
     PSKV& pskv = ps_kv_[key];
     mu_.unlock();
 
-
-    if (!pskv.keys.empty()) {
-      CHECK_EQ(static_cast<size_t>(pskv.size), size) << "The value size cannot be changed";
-    } else {
+    pskv.size = 0;
+    pskv.keys.clear();
+    pskv.ori_lens.clear();
+    pskv.lens.clear();
+    {
       auto krs = ps::Postoffice::Get()->GetServerKeyRanges();
       int num_servers = krs.size();
       CHECK_GT(num_servers, 0);

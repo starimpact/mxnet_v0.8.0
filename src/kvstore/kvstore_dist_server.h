@@ -113,6 +113,10 @@ class KVStoreDistServer {
     updater_ = updater;
   }
 
+  void set_partial_updater(const KVStore::Partial_Updater& updater)  {
+    CHECK(updater);
+    partial_updater_ = updater;
+  }
   /**
    * \brief blocked until received the command \a kSyncMode
    */
@@ -252,6 +256,8 @@ class KVStoreDistServer {
     store_dshape[0] = ori_row;
     store_dshape[1] = dim;
 
+    NDArray store_partial(rsv_dshape, Context());
+
     // there used several WaitToRead, this is because \a recved's memory
     // could be deallocated when this function returns. so we need to make sure
     // the operators with \a NDArray are actually finished
@@ -269,7 +275,7 @@ class KVStoreDistServer {
         // initialization
         stored = NDArray(store_dshape, Context());
         CopyFromTo_IndexTo(recved, &stored, ori_index, 0);
-        server->Response(req_meta);
+        server->Response_Partial(req_meta);
         stored.WaitToRead();
       } else if (sync_mode_) {
         // synced push
@@ -297,7 +303,7 @@ class KVStoreDistServer {
             CopyFromTo(merged.array, &stored);
           }
           for (const auto& req : merged.request) {
-            server->Response(req);
+            server->Response_Partial(req);
           }
           merged.request.clear();
           stored.WaitToRead();
@@ -306,9 +312,10 @@ class KVStoreDistServer {
         }
       } else {
         // async push
-        NDArray store_partial(rsv_dshape, Context());
+
         NDArray state_partial(rsv_dshape, Context());
         NDArray grad_partial(rsv_dshape, Context());
+
         CopyFromTo_IndexFrom(state, &state_partial, ori_index, 0);
         CopyFromTo_IndexFrom(stored, &store_partial, ori_index, 0);
         CopyFromTo(recved, &grad_partial, 0);
@@ -316,19 +323,22 @@ class KVStoreDistServer {
             CHECK(partial_updater_);
             partial_updater_(key, grad_partial, &store_partial, &state_partial);
           });
-        server->Response(req_meta);
+        server->Response_Partial(req_meta);
         stored.WaitToRead();
       }
     } else {
       // pull
       ps::KVPairs_Partial<real_t> response;
       CHECK(!stored.is_none()) << "init " << key << " first";
-      int len = stored.shape()[0];
+      CopyFromTo_IndexFrom(stored, &store_partial, ori_index, 0);
       response.keys = req_data.keys;
-      response.lens = {len};
+      response.lens = req_data.lens;
+      response.ori_shape = req_data.ori_shape;
+      response.ori_lens = req_data.ori_lens;
+      response.ori_index = req_data.ori_index;
       // TODO(mli) try to remove this CopyFrom
-      response.vals.CopyFrom(static_cast<const float*>(stored.data().dptr_), len);
-      server->Response(req_meta, response);
+      response.vals.CopyFrom(static_cast<const float*>(store_partial.data().dptr_), len);
+      server->Response_Partial(req_meta, response);
     }
   }
 

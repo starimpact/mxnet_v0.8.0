@@ -131,6 +131,28 @@ class KVStoreLocal : public KVStore {
     }
   }
 
+  void Pull_Partial(const std::vector<int>& keys,
+            const std::vector<NDArray*>& values,
+            const std::vector<TShape>& ori_shapes,
+            const std::vector<Intlist>& ori_indexes,
+            int priority) override {
+    std::vector<int> uniq_keys;
+    std::vector<std::vector<NDArray*> > grouped_vals;
+    std::vector<TShape> grouped_ori_shapes;
+    std::vector<Intlist> grouped_ori_indexes;
+    GroupKVPairs_Partial(keys, values, ori_shapes, ori_indexs,
+        &uniq_keys, &grouped_vals, &grouped_ori_shapes, &grouped_ori_indexes);
+
+    for (size_t i = 0; i < uniq_keys.size(); ++i) {
+      int key = uniq_keys[i];
+      const Intlist& ori_index = grouped_ori_indexes[i];
+      const NDArray& local = local_[key];
+      CopyFromTo_IndexFrom(local, &local_partial, ori_index);
+      CHECK(!local.is_none()) << "key " << key << " has not been inited";
+      comm_->Broadcast(key, local_partial, grouped_vals[i], priority);
+    }
+  }
+
   void Pull(const std::vector<int>& keys,
             const std::vector<NDArray*>& values,
             int priority) override {

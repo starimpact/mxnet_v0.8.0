@@ -46,6 +46,16 @@ def _updater_wrapper(updater):
     return updater_handle
 
 
+def _partial_updater_wrapper(updater):
+    """ a wrapper for the user-defined handle """
+    def updater_handle(key, lhs_handle, rhs_handle, state_handle, _):
+        """ ctypes function """
+        lhs = NDArray(NDArrayHandle(lhs_handle))
+        rhs = NDArray(NDArrayHandle(rhs_handle))
+        state = NDArray(NDArrayHandle(state_handle))
+        updater(key, lhs, rhs, state)
+    return updater_handle
+
 class KVStore(object):
     """A key-value store for synchronization of values, over multiple devices."""
     def __init__(self, handle):
@@ -98,6 +108,19 @@ class KVStore(object):
         ckeys, cvals = _ctype_key_value(key, value)
         check_call(_LIB.MXKVStoreInit(
             self.handle, mx_uint(len(ckeys)), ckeys, cvals))
+
+    def init_partial(self, key, value, ori_shape, ori_index):
+        assert(len(ori_shape)==len(ori_index))
+        _shape = []
+        _index = []
+        for i in xrange(len(ori_shape)):
+            _shape.extend(ori_shape[i])
+            _index.extend(ori_index[i])
+        cshapes = c_array(ctypes.c_int, _shape)
+        cindexes = c_array(ctypes.c_int, _index)
+        ckeys, cvals = _ctype_key_value(key, value)
+        check_call(_LIB.MXKVStoreInitPartial(
+            self.handle, mx_uint(len(ckeys)), ckeys, cvals, cshapes, cindexes))
 
     def push(self, key, value, priority=0):
         """ Push a single or a sequence of key-value pairs into the store.
@@ -165,6 +188,20 @@ class KVStore(object):
             self.handle, mx_uint(len(ckeys)), ckeys, cvals,
             ctypes.c_int(priority)))
 
+    def push(self, key, value, ori_shape, ori_index, priority=0):
+        assert (len(ori_shape) == len(ori_index))
+        _shape = []
+        _index = []
+        for i in xrange(len(ori_shape)):
+            _shape.extend(ori_shape[i])
+            _index.extend(ori_index[i])
+        cshapes = c_array(ctypes.c_int, _shape)
+        cindexes = c_array(ctypes.c_int, _index)
+        ckeys, cvals = _ctype_key_value(key, value)
+        check_call(_LIB.MXKVStorePushPartial(
+            self.handle, mx_uint(len(ckeys)), ckeys, cvals, cshapes, cindexes,
+            ctypes.c_int(priority)))
+
     def pull(self, key, out=None, priority=0):
         """ Pull a single value or a sequence of values from the store.
 
@@ -228,6 +265,20 @@ class KVStore(object):
             self.handle, mx_uint(len(ckeys)), ckeys, cvals,
             ctypes.c_int(priority)))
 
+    def pull_partial(self, key, out, ori_shape, ori_index, priority=0):
+        assert (len(ori_shape) == len(ori_index))
+        _shape = []
+        _index = []
+        for i in xrange(len(ori_shape)):
+            _shape.extend(ori_shape[i])
+            _index.extend(ori_index[i])
+        cshapes = c_array(ctypes.c_int, _shape)
+        cindexes = c_array(ctypes.c_int, _index)
+        ckeys, cvals = _ctype_key_value(key, out)
+        check_call(_LIB.MXKVStorePullPartial(
+            self.handle, mx_uint(len(ckeys)), ckeys, cvals, cshapes, cindexes,
+            ctypes.c_int(priority)))
+
     def set_optimizer(self, optimizer):
         """Register an optimizer to the store
 
@@ -254,6 +305,23 @@ class KVStore(object):
             self._send_command_to_servers(0, optim_str)
         else:
             self._set_updater(opt.get_updater(optimizer))
+
+    def set_partial_optimizer(self, optimizer):
+        is_worker = ctypes.c_int()
+        check_call(_LIB.MXKVStoreIsWorkerNode(ctypes.byref(is_worker)))
+
+        # pylint: disable=invalid-name
+        if 'dist' in self.type and is_worker.value:
+            # send the optimizer to server
+            try:
+                # use ASCII protocol 0, might be slower, but not a big ideal
+                optim_str = pickle.dumps(optimizer, 0)
+            except:
+                raise
+            # set cmd=1
+            self._send_command_to_servers(1, optim_str)
+        else:
+            self._set_partial_updater(opt.get_partial_updater(optimizer))
 
     @property
     def type(self):
@@ -327,6 +395,11 @@ class KVStore(object):
         self._updater_func = _updater_proto(_updater_wrapper(updater))
         check_call(_LIB.MXKVStoreSetUpdater(self.handle, self._updater_func, None))
 
+    def _set_partial_updater(self, updater):
+        _partial_updater_proto = ctypes.CFUNCTYPE(
+            None, ctypes.c_int, NDArrayHandle, NDArrayHandle, NDArrayHandle, ctypes.c_void_p)
+        self._partial_updater_func = _partial_updater_proto(_partial_updater_wrapper(updater))
+        check_call(_LIB.MXKVStoreSetPartialUpdater(self.handle, self._partial_updater_func, None))
 
     def _barrier(self):
         """Global barrier among all worker nodes

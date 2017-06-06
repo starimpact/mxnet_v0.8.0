@@ -39,7 +39,8 @@ class Module(BaseModule):
         Default `None`, indicating no network parameters are fixed.
     """
     def __init__(self, symbol, data_names=('data',), label_names=('softmax_label',),
-                 logger=logging, context=ctx.cpu(), work_load_list=None, fixed_param_names=None):
+                 logger=logging, context=ctx.cpu(), work_load_list=None, fixed_param_names=None,
+                 ori_shapes={}, ori_indexes={}):
         super(Module, self).__init__(logger=logger)
 
         if isinstance(context, ctx.Context):
@@ -76,6 +77,9 @@ class Module(BaseModule):
         self._exec_group = None
         self._data_shapes = None
         self._label_shapes = None
+
+        self._ori_shapes = ori_shapes
+        self._ori_indexes = ori_indexes
 
     def _reset_bind(self):
         """Internal function to reset binded state."""
@@ -350,10 +354,12 @@ class Module(BaseModule):
             self._updater = opt.get_updater(optimizer)
         if kvstore:
             # copy initialized local parameters to kvstore
-            _initialize_kvstore(kvstore=kvstore,
+            _initialize_kvstore_partial(kvstore=kvstore,
                                 param_arrays=self._exec_group.param_arrays,
                                 arg_params=self._arg_params,
                                 param_names=self._param_names,
+                                ori_shapes=self._ori_shapes,
+                                ori_indexes=self._ori_indexes,
                                 update_on_kvstore=update_on_kvstore)
         if update_on_kvstore:
             kvstore.set_optimizer(self._optimizer)
@@ -409,8 +415,11 @@ class Module(BaseModule):
 
         self._params_dirty = True
         if self._update_on_kvstore:
-            _update_params_on_kvstore(self._exec_group.param_arrays,
+            _update_params_on_kvstore_partial(self._exec_group.param_arrays,
                                       self._exec_group.grad_arrays,
+                                      self._param_names,
+                                      self._ori_shapes,
+                                      self._ori_indexes,
                                       self._kvstore)
         else:
             _update_params(self._exec_group.param_arrays,

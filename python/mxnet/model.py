@@ -84,11 +84,48 @@ def _initialize_kvstore(kvstore, param_arrays, arg_params, param_names,
         if update_on_kvstore:
             kvstore.pull(idx, param_on_devs, priority=-idx)
 
+def _initialize_kvstore_partial(kvstore, param_arrays, arg_params, param_names,
+                                ori_shapes, ori_indexes,
+                                update_on_kvstore):
+    """ Initialize kvstore"""
+    assert(len(ori_shapes) == len(ori_indexes))
+    for idx, param_on_devs in enumerate(param_arrays):
+        name = param_names[idx]
+        if name in ori_shapes.keys():
+            kvstore.init_partial(idx, arg_params[name], ori_shapes[name], ori_indexes[name])
+            continue
+        kvstore.init(idx, arg_params[name])
+
+        if update_on_kvstore:
+            kvstore.pull(idx, param_on_devs, priority=-idx)
+
 def _update_params_on_kvstore(param_arrays, grad_arrays, kvstore):
     """ Perform update of param_arrays from grad_arrays on kvstore."""
     for index, pair in enumerate(zip(param_arrays, grad_arrays)):
         arg_list, grad_list = pair
         if grad_list[0] is None:
+            continue
+        # push gradient, priority is negative index
+        kvstore.push(index, grad_list, priority=-index)
+        # pull back the weights
+        kvstore.pull(index, arg_list, priority=-index)
+
+def _update_params_on_kvstore_partial(param_arrays, grad_arrays, param_names,
+                                      ori_shapes, ori_indexes, kvstore):
+    """ Perform update of param_arrays from grad_arrays on kvstore."""
+    assert (len(ori_shapes) == len(ori_indexes))
+    for index, pair in enumerate(zip(param_arrays, grad_arrays)):
+        name = param_names[idx]
+        arg_list, grad_list = pair
+        if grad_list[0] is None:
+            continue
+        if name in ori_shapes.keys():
+            ori_shape = ori_shapes[name]
+            ori_index = ori_indexes[name]
+            # push partial gradient, priority is negative index
+            kvstore.push_partial(index, grad_list, ori_shape, ori_index, priority=-index)
+            # pull back the partial weights
+            kvstore.pull_partial(index, arg_list, ori_shape, ori_index, priority=-index)
             continue
         # push gradient, priority is negative index
         kvstore.push(index, grad_list, priority=-index)

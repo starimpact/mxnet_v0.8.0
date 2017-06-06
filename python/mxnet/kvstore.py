@@ -188,7 +188,11 @@ class KVStore(object):
             self.handle, mx_uint(len(ckeys)), ckeys, cvals,
             ctypes.c_int(priority)))
 
-    def push(self, key, value, ori_shape, ori_index, priority=0):
+    def push_partial(self, key, value, ori_shape, ori_index, priority=0):
+        if not isinstance(ori_shape, list):
+            ori_shape = [ori_shape]
+        if not isinstance(ori_index, list):
+            ori_index = [ori_index]
         assert (len(ori_shape) == len(ori_index))
         _shape = []
         _index = []
@@ -266,6 +270,10 @@ class KVStore(object):
             ctypes.c_int(priority)))
 
     def pull_partial(self, key, out, ori_shape, ori_index, priority=0):
+        if not isinstance(ori_shape, list):
+            ori_shape = [ori_shape]
+        if not isinstance(ori_index, list):
+            ori_index = [ori_index]
         assert (len(ori_shape) == len(ori_index))
         _shape = []
         _index = []

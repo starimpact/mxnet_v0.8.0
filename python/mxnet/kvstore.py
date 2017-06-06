@@ -35,6 +35,58 @@ def _ctype_key_value(keys, vals):
             c_vals += c_val_i
         return (c_array(ctypes.c_int, c_keys), c_array(NDArrayHandle, c_vals))
 
+def _ctype_shape_index(ori_shapes, ori_indexes):
+     _shape = []
+     _index = []
+     for i in xrange(len(ori_shapes)):
+         _shape.extend(ori_shapes[i])
+         _index.extend(ori_indexes[i])
+     cshapes = c_array(ctypes.c_int, _shape)
+     cindexes = c_array(ctypes.c_int, _index)
+     return cshapes, cindexes
+
+def _ctype_key_value_partial(keys, ori_shapes, ori_indexes, vals):
+    """
+    Return ctype arrays for the key-value args, for internal use
+    """
+    if isinstance(ori_shapes[0], int):
+        ori_shapes = [ori_shapes]
+        ori_indexes = [ori_indexes]
+    assert(len(ori_shapes)==len(ori_indexes)) 
+    if isinstance(keys, int):
+        if isinstance(vals, NDArray):
+            c_shape, c_index = _ctype_shape_index(ori_shapes, ori_indexes)
+            return (c_array(ctypes.c_int, [keys]),
+                    c_shape, c_index,
+                    c_array(NDArrayHandle, [vals.handle]))
+        else:
+            for value in vals:
+                assert(isinstance(value, NDArray))
+            vlen = len(vals)
+            c_shape, c_index = _ctype_shape_index(ori_shapes * vlen, ori_indexes * vlen)
+            return (c_array(ctypes.c_int, [keys] * vlen),
+                    c_shape, c_index,
+                    c_array(NDArrayHandle, [value.handle for value in vals]))
+    else:
+        assert(len(keys) == len(vals))
+        for k in keys:
+            assert(isinstance(k, int))
+        c_keys = []
+        c_shapes = []
+        c_indexes = []
+        c_vals = []
+        for key, shape, index, val in zip(keys, ori_shapes, ori_indexes, vals):
+            c_key_i, c_shape_i, c_index_i, c_val_i = _ctype_key_value_partial(key, [shape], [index], val)
+            c_keys += c_key_i
+            c_shapes += c_shape_i
+            c_indexes += c_index_i
+            c_vals += c_val_i
+        return (c_array(ctypes.c_int, c_keys), 
+                c_array(ctypes.c_int, c_shapes),
+                c_array(ctypes.c_int, c_indexes),
+                c_array(NDArrayHandle, c_vals))
+
+
 
 def _updater_wrapper(updater):
     """ a wrapper for the user-defined handle """
@@ -111,14 +163,7 @@ class KVStore(object):
 
     def init_partial(self, key, value, ori_shape, ori_index):
         assert(len(ori_shape)==len(ori_index))
-        _shape = []
-        _index = []
-        for i in xrange(len(ori_shape)):
-            _shape.extend(ori_shape[i])
-            _index.extend(ori_index[i])
-        cshapes = c_array(ctypes.c_int, _shape)
-        cindexes = c_array(ctypes.c_int, _index)
-        ckeys, cvals = _ctype_key_value(key, value)
+        ckeys, cshapes, cindexes, cvals =_ctype_key_value_partial(key, ori_shape, ori_index, value)
         check_call(_LIB.MXKVStoreInitPartial(
             self.handle, mx_uint(len(ckeys)), ckeys, cvals, cshapes, cindexes))
 
@@ -189,19 +234,8 @@ class KVStore(object):
             ctypes.c_int(priority)))
 
     def push_partial(self, key, value, ori_shape, ori_index, priority=0):
-        if not isinstance(ori_shape, list):
-            ori_shape = [ori_shape]
-        if not isinstance(ori_index, list):
-            ori_index = [ori_index]
-        assert (len(ori_shape) == len(ori_index))
-        _shape = []
-        _index = []
-        for i in xrange(len(ori_shape)):
-            _shape.extend(ori_shape[i])
-            _index.extend(ori_index[i])
-        cshapes = c_array(ctypes.c_int, _shape)
-        cindexes = c_array(ctypes.c_int, _index)
-        ckeys, cvals = _ctype_key_value(key, value)
+        assert(len(ori_shape)==len(ori_index))
+        ckeys, cshapes, cindexes, cvals =_ctype_key_value_partial(key, ori_shape, ori_index, value)
         check_call(_LIB.MXKVStorePushPartial(
             self.handle, mx_uint(len(ckeys)), ckeys, cvals, cshapes, cindexes,
             ctypes.c_int(priority)))
@@ -270,19 +304,8 @@ class KVStore(object):
             ctypes.c_int(priority)))
 
     def pull_partial(self, key, out, ori_shape, ori_index, priority=0):
-        if not isinstance(ori_shape, list):
-            ori_shape = [ori_shape]
-        if not isinstance(ori_index, list):
-            ori_index = [ori_index]
-        assert (len(ori_shape) == len(ori_index))
-        _shape = []
-        _index = []
-        for i in xrange(len(ori_shape)):
-            _shape.extend(ori_shape[i])
-            _index.extend(ori_index[i])
-        cshapes = c_array(ctypes.c_int, _shape)
-        cindexes = c_array(ctypes.c_int, _index)
-        ckeys, cvals = _ctype_key_value(key, out)
+        assert(len(ori_shape)==len(ori_index))
+        ckeys, cshapes, cindexes, cvals =_ctype_key_value_partial(key, ori_shape, ori_index, out)
         check_call(_LIB.MXKVStorePullPartial(
             self.handle, mx_uint(len(ckeys)), ckeys, cvals, cshapes, cindexes,
             ctypes.c_int(priority)))

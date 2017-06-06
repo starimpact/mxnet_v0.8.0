@@ -86,7 +86,7 @@ class KVStoreLocal : public KVStore {
       NDArray& local_partial = local_partial_[key];
       NDArray& state = states_[key];
       NDArray& state_partial = states_partial_[key];
-      if (updater_ != nullptr) {
+      if (partial_updater_ != nullptr) {
         CHECK(!local.is_none()) << "key " << key << " has not been inited";
         // if merged is on gpu, we may need copy weight from cpu to gpu
         if (merged.ctx().dev_mask() != cpu::kDevMask &&

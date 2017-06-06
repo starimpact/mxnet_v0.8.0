@@ -345,12 +345,13 @@ class CommDevice : public Comm {
   bool inited_;
 };
 
+}  // namespace kvstore
+
 // copy ndfrom to the indexto positions of ndto.
 void CopyFromTo_IndexTo(const NDArray& ndfrom, NDArray *ndto, const std::vector<int>& indexto, int priority = 0);
 
 // copy data of indexfrom positions of ndfrom to ndto.
 void CopyFromTo_IndexFrom(const NDArray& ndfrom, NDArray *ndto, const std::vector<int>& indexfrom, int priority = 0);
 
-}  // namespace kvstore
 }  // namespace mxnet
 #endif  // MXNET_KVSTORE_COMM_H_

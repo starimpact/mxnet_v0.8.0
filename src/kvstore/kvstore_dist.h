@@ -64,7 +64,7 @@ class KVStoreDist : public KVStoreLocal {
       comm_->Init(keys[i], values[i].shape());
     }
     if (get_rank() == 0) {
-      Push_Partial_(keys, values, ori_shapes, ori_indexs, 0, false);
+      Push_Partial_(keys, values, ori_shapes, ori_indexes, 0, false);
       // wait until the push is finished
       for (const auto& v : values) {
         v.WaitToWrite();
@@ -120,7 +120,7 @@ class KVStoreDist : public KVStoreLocal {
     std::vector<std::vector<NDArray*> > grouped_vals;
     std::vector<TShape> grouped_ori_shapes;
     std::vector<Intlist> grouped_ori_indexes;
-    GroupKVPairs_Partial(keys, values, ori_shapes, ori_indexs,
+    GroupKVPairs_Partial(keys, values, ori_shapes, ori_indexes,
         &uniq_keys, &grouped_vals, &grouped_ori_shapes, &grouped_ori_indexes);
 
     for (size_t i = 0; i < uniq_keys.size(); ++i) {
@@ -146,11 +146,12 @@ class KVStoreDist : public KVStoreLocal {
         // issue pull, false means no delete
         auto vals = new ps::SArray<real_t>(data, size, false);
         auto shape2d = ori_shape.FlatTo2D();
-        ps::SArray<int> ori_shape0(shape2d.shape_, 2, false);
-        ps::SArray<int> ori_index0(ori_index.data(), ori_index.size(), false);
+        ps::SArray<int> ori_shape0((int*)shape2d.shape_, 2, false);
+        ps::SArray<int> ori_index0;
+        ori_index0.CopyFrom(ori_index.data(), ori_index.size());
         CHECK_NOTNULL(ps_worker_)->ZPull_Partial(
-            pskv.keys, pskv.lens, ori_shape0, ori_index0, pskv.ori_lens,
-            &vals, &pskv.lens, 1, [vals, cb](){ delete vals; cb(); });
+            pskv.keys, ori_shape0, ori_index0, pskv.ori_lens,
+            vals, &pskv.lens, 1, [vals, cb](){ delete vals; cb(); });
       };
 
       CHECK_NOTNULL(Engine::Get())->PushAsync(
@@ -183,10 +184,10 @@ class KVStoreDist : public KVStoreLocal {
       real_t* data = static_cast<real_t*>(recv_buf.data().dptr_);
       size_t size = recv_buf.shape().Size();
 
-      auto pull_from_servers = [this, key, data, size, ori_shape, ori_index](
+      auto pull_from_servers = [this, key, data, size](
           RunContext rctx, Engine::CallbackOnComplete cb) {
         // convert to ps keys
-        PSKV& pskv = EncodeKey_Partial(key, ori_shape, ori_index);
+        PSKV& pskv = EncodeKey(key, size);
 
         // issue pull, false means no delete
         auto vals = new ps::SArray<real_t>(data, size, false);
@@ -281,7 +282,7 @@ class KVStoreDist : public KVStoreLocal {
     std::vector<std::vector<NDArray> > grouped_vals;
     std::vector<TShape> grouped_ori_shapes;
     std::vector<Intlist> grouped_ori_indexes;
-    GroupKVPairs_Partial(keys, values, ori_shapes, ori_indexs,
+    GroupKVPairs_Partial(keys, values, ori_shapes, ori_indexes,
         &uniq_keys, &grouped_vals, &grouped_ori_shapes, &grouped_ori_indexes);
 
     for (size_t i = 0; i < uniq_keys.size(); ++i) {
@@ -291,7 +292,7 @@ class KVStoreDist : public KVStoreLocal {
       const TShape& ori_shape = grouped_ori_shapes[i];
       const Intlist& ori_index = grouped_ori_indexes[i];
       // check index order
-      for (int idx = 0; idx < ori_index.size() - 1; idx++)
+      for (size_t idx = 0; idx < ori_index.size() - 1; idx++)
       {
         CHECK_LT(ori_index[idx], ori_index[idx+1]) << "The original indexes and related data must be ascending sorted";
       }
@@ -318,8 +319,9 @@ class KVStoreDist : public KVStoreLocal {
         // do push. false means no delete
         ps::SArray<real_t> vals(data, size, false);
         auto shape2d = ori_shape.FlatTo2D();
-        ps::SArray<int> ori_shape0(shape2d.shape_, 2, false);
-        ps::SArray<int> ori_index0(ori_index.data(), ori_index.size(), false);
+        ps::SArray<int> ori_shape0((int*)shape2d.shape_, 2, false);
+        ps::SArray<int> ori_index0;
+        ori_index0.CopyFrom(ori_index.data(), ori_index.size());
         CHECK_NOTNULL(ps_worker_)->ZPush_Partial(
             pskv.keys, vals, ori_shape0, ori_index0, pskv.lens,
             pskv.ori_lens, 1, [cb]() { cb(); });
@@ -475,8 +477,8 @@ class KVStoreDist : public KVStoreLocal {
 
       size_t size = ori_index.size() * dimnum;
 
-      const int* oribegin = ori_index.begin();
-      const int* oritail = ori_index.end();
+      Intlist::const_iterator oribegin = ori_index.begin();
+      Intlist::const_iterator oritail = ori_index.end();
       // push a negative key
       pskv.keys.push_back(0);
       pskv.size = 0;
@@ -485,8 +487,6 @@ class KVStoreDist : public KVStoreLocal {
       pskv.lens.push_back(realstart * dimnum);
       pskv.ori_lens.push_back(0);
       pskv.size += realstart * dimnum;
-
-      size_t partial_rownum = ori_index.size();
 
       // a simple heuristic for load balance
       if (size < bigarray_bound_) {
@@ -509,7 +509,7 @@ class KVStoreDist : public KVStoreLocal {
           ps::Key ps_key = krs[i].begin() + key;
           CHECK_LT(ps_key, krs[i].end());
           pskv.keys.push_back(ps_key);
-          int realpart_end = std::upper_bound(oribegin, oritail, part_size-1);
+          int realpart_end = std::upper_bound(oribegin, oritail, part_size-1) - oribegin;
           int realpart_size = realpart_end - realstart;
           pskv.lens.push_back(realpart_size * dimnum);
           pskv.size += realpart_size * dimnum;

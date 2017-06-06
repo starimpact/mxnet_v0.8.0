@@ -74,12 +74,12 @@ class KVStoreLocal : public KVStore {
     std::vector<std::vector<NDArray> > grouped_vals;
     std::vector<TShape> grouped_ori_shapes;
     std::vector<Intlist> grouped_ori_indexes;
-    GroupKVPairs_Partial(keys, values, ori_shapes, ori_indexs,
+    GroupKVPairs_Partial(keys, values, ori_shapes, ori_indexes,
         &uniq_keys, &grouped_vals, &grouped_ori_shapes, &grouped_ori_indexes);
 
     for (size_t i = 0; i < uniq_keys.size(); ++i) {
       int key = uniq_keys[i];
-      const TShape& ori_shape = grouped_ori_shapes[i];
+//      const TShape& ori_shape = grouped_ori_shapes[i];
       const Intlist& ori_index = grouped_ori_indexes[i];
       const NDArray& merged = comm_->Reduce(key, grouped_vals[i], priority);
       NDArray& local = local_[key];
@@ -140,13 +140,14 @@ class KVStoreLocal : public KVStore {
     std::vector<std::vector<NDArray*> > grouped_vals;
     std::vector<TShape> grouped_ori_shapes;
     std::vector<Intlist> grouped_ori_indexes;
-    GroupKVPairs_Partial(keys, values, ori_shapes, ori_indexs,
+    GroupKVPairs_Partial(keys, values, ori_shapes, ori_indexes,
         &uniq_keys, &grouped_vals, &grouped_ori_shapes, &grouped_ori_indexes);
 
     for (size_t i = 0; i < uniq_keys.size(); ++i) {
       int key = uniq_keys[i];
       const Intlist& ori_index = grouped_ori_indexes[i];
       const NDArray& local = local_[key];
+      NDArray& local_partial = local_partial_[key];
       CopyFromTo_IndexFrom(local, &local_partial, ori_index);
       CHECK(!local.is_none()) << "key " << key << " has not been inited";
       comm_->Broadcast(key, local_partial, grouped_vals[i], priority);

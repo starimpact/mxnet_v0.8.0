@@ -239,15 +239,15 @@ class KVStoreDistServer {
       CHECK_EQ(req_data.ori_shape.size(), (size_t)2);
       ori_row = req_data.ori_shape[0];
       dim = req_data.ori_shape[1];
-      CHECK_EQ(req_data.ori_index.size(), req_data.lens[0]/dim);
+      CHECK_EQ(req_data.ori_index.size(), (std::size_t)req_data.lens[0]/dim);
       CHECK_EQ(req_data.ori_lens[0], ori_row * dim);
     }
 
     int key = DecodeKey(req_data.keys[0]);
     auto& stored = store_[key];
-    auto& state = sates_[key];
+    auto& state = states_[key];
 
-    vector<int> ori_index(req_data.ori_index.begin(), req_data.ori_index.end());
+    std::vector<int> ori_index(req_data.ori_index.begin(), req_data.ori_index.end());
 
     TShape rsv_dshape(2), store_dshape(2);
 
@@ -263,13 +263,8 @@ class KVStoreDistServer {
     // the operators with \a NDArray are actually finished
     if (req_meta.push) {
       TBlob recv_blob((real_t*)req_data.vals.data(), // NOLINT(*)
-                      dshape, cpu::kDevMask);
+                      rsv_dshape, cpu::kDevMask);
       NDArray recved = NDArray(recv_blob, 0);
-
-      if (merged.array.is_none()) {
-        merged.array = NDArray(store_dshape, Context());
-        merged.array_tmp = NDArray(store_dshape, Context());
-      }
 
       if (stored.is_none()) {
         // initialization
@@ -280,6 +275,10 @@ class KVStoreDistServer {
       } else if (sync_mode_) {
         // synced push
         auto& merged = merge_buf_[key];
+        if (merged.array.is_none()) {
+          merged.array = NDArray(store_dshape, Context());
+          merged.array_tmp = NDArray(store_dshape, Context());
+        }
 
         if (merged.request.size() == 0) {
           CopyFromTo_IndexTo(recved, &merged.array, ori_index, 0);
@@ -337,6 +336,7 @@ class KVStoreDistServer {
       response.ori_lens = req_data.ori_lens;
       response.ori_index = req_data.ori_index;
       // TODO(mli) try to remove this CopyFrom
+      size_t len = req_data.lens[0];
       response.vals.CopyFrom(static_cast<const float*>(store_partial.data().dptr_), len);
       server->Response_Partial(req_meta, response);
     }

@@ -1224,15 +1224,17 @@ MXNET_DLL int MXKVStorePullPartial(KVStoreHandle handle,
                                    int* ori_indexes,
                                    int priority);
 
-MXNET_DLL int MXKVStoreSetPartialUpdater(KVStoreHandle handle,
-                                  MXKVStorePartialUpdater updater,
-                                  void *updater_handle);
-
 typedef void (MXKVStorePartialUpdater)(int key,
                                 NDArrayHandle recv,
                                 NDArrayHandle local,
                                 NDArrayHandle state,
                                 void *handle);
+
+MXNET_DLL int MXKVStoreSetPartialUpdater(KVStoreHandle handle,
+                                  MXKVStorePartialUpdater updater,
+                                  void *updater_handle);
+
+
 /*!
  * \brief get the type of the kvstore
  * \param handle handle to the KVStore

@@ -45,24 +45,28 @@ KVStore* KVStore::Create(const char *type_name) {
 }
 
 // copy ndfrom to the indexto positions of ndto.
-void CopyFromTo_IndexTo(NDArray& ndfrom, NDArray *ndto, vector<int>& indexto, int priority) {
-  TShape& shapefrom = ndfrom.shape();
+void CopyFromTo_IndexTo(const NDArray& ndfrom, NDArray *ndto, const std::vector<int>& indexto, int priority) {
+  const TShape& shapefrom = ndfrom.shape();
   CHECK_EQ(shapefrom[0], indexto.size());
-  for (int idx = 0; idx < shapefrom[0]; idx++) {
+  for (std::size_t idx = 0; idx < shapefrom[0]; idx++) {
     int idxto = indexto[idx];
     if (idxto < 0) continue;
-    CopyFromTo(ndfrom.At(idx), &ndto->At(idxto), priority);
+    NDArray from = ndfrom.At(idx);
+    NDArray to = ndto->At(idxto);
+    CopyFromTo(from, &to, priority);
   }
 }
 
 // copy data of indexfrom positions of ndfrom to ndto.
-void CopyFromTo_IndexFrom(NDArray& ndfrom, NDArray *ndto, vector<int>& indexfrom, int priority) {
-  TShape& shapeto = ndto->shape();
-  CHECK_EQ(shapeto[0], indexto.size());
-  for (int idx = 0; idx < shapeto[0]; idx++) {
+void CopyFromTo_IndexFrom(const NDArray& ndfrom, NDArray *ndto, const std::vector<int>& indexfrom, int priority) {
+  const TShape& shapeto = ndto->shape();
+  CHECK_EQ(shapeto[0], indexfrom.size());
+  for (std::size_t idx = 0; idx < shapeto[0]; idx++) {
     int idxfrom = indexfrom[idx];
     if (idxfrom < 0) continue;
-    CopyFromTo(ndfrom.At(idxfrom), &ndto->At(idx), priority);
+    NDArray from = ndfrom.At(idxfrom);
+    NDArray to = ndto->At(idx);
+    CopyFromTo(from, &to, priority);
   }
 }
 

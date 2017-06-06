@@ -283,7 +283,7 @@ class KVWorker : public SimpleApp {
       SlicedKVs* sliced)>;
 
   using Slicer_Partial = std::function<void(
-      const KVPairs<Val>& send, const std::vector<Range>& ranges,
+      const KVPairs_Partial<Val>& send, const std::vector<Range>& ranges,
       SlicedKVs_Partial* sliced)>;
   /**
    * \brief set a user-defined slicer
@@ -302,6 +302,12 @@ class KVWorker : public SimpleApp {
   template <typename C, typename D>
   int Pull_(const SArray<Key>& keys, C* vals, D* lens,
             int cmd, const Callback& cb);
+
+  template <typename C, typename D>
+  int Pull_Partial_(
+    const SArray<Key>& keys, const SArray<int>& ori_shape,
+    const SArray<int>& ori_index, const SArray<int>& ori_lens,
+    C* vals, D* lens, int cmd, const Callback& cb);
   /**
    * \brief add a callback for a request. threadsafe.
    * @param cb callback
@@ -410,6 +416,8 @@ class KVServer : public SimpleApp {
    * \param res the kv pairs that will send back to the worker
    */
   void Response(const KVMeta& req, const KVPairs<Val>& res = KVPairs<Val>());
+
+  void Response_Partial(const KVMeta& req, const KVPairs_Partial<Val>& res = KVPairs_Partial<Val>());
 
  private:
   /** \brief internal receive handle */
@@ -618,18 +626,18 @@ void KVWorker<Val>::DefaultSlicer_Partial(
   if (send.keys.size() <= 1) return;
 
   // the length of value
-  size_t k = 0, val_begin = 0, val_end = 0, oval_begin = 0, oval_end = 0;
-  SArray<int>& ori_shape = send.ori_shape;
-  SArray<int>& ori_index = send.ori_index;
+  size_t val_begin = 0, val_end = 0, oval_begin = 0, oval_end = 0;
+  const SArray<int>& ori_shape = send.ori_shape;
+  const SArray<int>& ori_index = send.ori_index;
   size_t dim = ori_shape[1];
   size_t ori_size = ori_index.size() * dim;
-  if (!send.lens.empty) ori_size -= send.lens[0];
+  if (!send.lens.empty()) ori_size -= send.lens[0];
 
   CHECK_GT(send.lens.size(), 1) << "The send.lens.size() must be larger than 1";
 
   CHECK_EQ(send.keys.size(), send.lens.size()) << "The key size must equal lens size";
 
-  CHECK_EQ(send.keys.ori_lens.size(), send.lens.size()) << "The ori_lens size must equal lens size";
+  CHECK_EQ(send.ori_lens.size(), send.lens.size()) << "The ori_lens size must equal lens size";
 
   // slice
   for (size_t i = 0; i < n; ++i) {
@@ -709,7 +717,7 @@ void KVWorker<Val>::Send(int timestamp, bool push, int cmd, const KVPairs<Val>& 
 template <typename Val>
 void KVWorker<Val>::Send_Partial(int timestamp, bool push, int cmd, const KVPairs_Partial<Val>& kvs) {
   // slice the message
-  SlicedKVs sliced;
+  SlicedKVs_Partial sliced;
   slicer_partial_(kvs, Postoffice::Get()->GetServerKeyRanges(), &sliced);
 
   // need to add response first, since it will not always trigger the callback
@@ -868,11 +876,12 @@ int KVWorker<Val>::Pull_(
 template <typename Val>
 template <typename C, typename D>
 int KVWorker<Val>::Pull_Partial_(
-    const SArray<Key>& keys, const SArray<int>& lens, const SArray<int>& ori_shape,
+    const SArray<Key>& keys, const SArray<int>& ori_shape,
     const SArray<int>& ori_index, const SArray<int>& ori_lens,
     C* vals, D* lens, int cmd, const Callback& cb) {
   int ts = obj_->NewRequest(kServerGroup);
-  AddCallback(ts, [this, ts, keys, vals, lens, cb]() mutable {
+  AddCallback(ts, [this, ts, keys, ori_shape, ori_index, 
+                   ori_lens, vals, lens, cb]() mutable {
       mu_.lock();
       auto& kvs = recv_kvs_partial_[ts];
       mu_.unlock();

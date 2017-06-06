@@ -1329,8 +1329,8 @@ int MXKVStoreInitPartial(KVStoreHandle handle,
     v_keys[i] = keys[i];
     v_vals[i] = *static_cast<NDArray*>(vals[i]);
     dim0 = v_vals[i].shape()[0];
-    v_shapes[i] = TShape(ori_shapes * 2, ori_shapes * 2 + 2);
-    v_indexes[i] = Intlist(ori_indexes + offset, ori_indexes[i] + offset + dim0);
+    v_shapes[i] = TShape(ori_shapes + i * 2, ori_shapes + i * 2 + 2);
+    v_indexes[i] = Intlist(ori_indexes + offset, ori_indexes + offset + dim0);
     offset += dim0;
   }
   static_cast<KVStore*>(handle)->Init_Partial(v_keys, v_vals, v_shapes, v_indexes);
@@ -1356,8 +1356,8 @@ int MXKVStorePushPartial(KVStoreHandle handle,
     v_keys[i] = keys[i];
     v_vals[i] = *static_cast<NDArray*>(vals[i]);
     dim0 = v_vals[i].shape()[0];
-    v_shapes[i] = TShape(ori_shapes * 2, ori_shapes * 2 + 2);
-    v_indexes[i] = Intlist(ori_indexes + offset, ori_indexes[i] + offset + dim0);
+    v_shapes[i] = TShape(ori_shapes + i * 2, ori_shapes + i * 2 + 2);
+    v_indexes[i] = Intlist(ori_indexes + offset, ori_indexes + offset + dim0);
     offset += dim0;
   }
   static_cast<KVStore*>(handle)->Push_Partial(v_keys, v_vals, v_shapes, v_indexes, priority);
@@ -1376,15 +1376,16 @@ int MXKVStorePullPartial(KVStoreHandle handle,
   std::vector<NDArray*> v_vals(num);
   std::vector<TShape> v_shapes(num);
   std::vector<Intlist> v_indexes(num);
+  int offset = 0, dim0 = 0;
   for (mx_uint i = 0; i < num; ++i) {
     v_keys[i] = keys[i];
     v_vals[i] = static_cast<NDArray*>(vals[i]);
-    dim0 = v_vals[i].shape()[0];
-    v_shapes[i] = TShape(ori_shapes * 2, ori_shapes * 2 + 2);
-    v_indexes[i] = Intlist(ori_indexes + offset, ori_indexes[i] + offset + dim0);
+    dim0 = v_vals[i]->shape()[0];
+    v_shapes[i] = TShape(ori_shapes + i * 2, ori_shapes + i * 2 + 2);
+    v_indexes[i] = Intlist(ori_indexes + offset, ori_indexes + offset + dim0);
     offset += dim0;
   }
-  static_cast<KVStore*>(handle)->Pull(v_keys, v_vals, v_shapes, v_indexes, priority);
+  static_cast<KVStore*>(handle)->Pull_Partial(v_keys, v_vals, v_shapes, v_indexes, priority);
   API_END();
 }
 
@@ -1392,9 +1393,9 @@ int MXKVStoreSetPartialUpdater(KVStoreHandle handle,
                         MXKVStorePartialUpdater updater,
                         void* updater_handle) {
   API_BEGIN();
-  MXKVStorePartialUpdater * updater_temp = updater;
+  MXKVStorePartialUpdater* updater_temp = updater;
   void* updater_handle_temp = updater_handle;
-  std::function<void(int, const NDArray&, NDArray*)> updt
+  std::function<void(int, const NDArray&, NDArray*, NDArray*)> updt
   = [updater_temp, updater_handle_temp](int key, const NDArray& recv, NDArray* local, NDArray* state) {
     NDArray* recv_copy = new NDArray();
     *recv_copy = recv;

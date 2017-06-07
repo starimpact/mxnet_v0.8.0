@@ -11,6 +11,7 @@ from .. import optimizer as opt
 
 from .executor_group import DataParallelExecutorGroup
 from ..model import _create_kvstore, _initialize_kvstore, _update_params, _update_params_on_kvstore
+from ..model import _initialize_kvstore_partial, _update_params_on_kvstore_partial
 from ..initializer import Uniform
 
 from .base_module import BaseModule

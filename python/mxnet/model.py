@@ -115,7 +115,7 @@ def _update_params_on_kvstore_partial(param_arrays, grad_arrays, param_names,
     """ Perform update of param_arrays from grad_arrays on kvstore."""
     assert (len(ori_shapes) == len(ori_indexes))
     for index, pair in enumerate(zip(param_arrays, grad_arrays)):
-        name = param_names[idx]
+        name = param_names[index]
         arg_list, grad_list = pair
         if grad_list[0] is None:
             continue

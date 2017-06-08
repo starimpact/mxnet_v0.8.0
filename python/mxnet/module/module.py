@@ -41,7 +41,7 @@ class Module(BaseModule):
     """
     def __init__(self, symbol, data_names=('data',), label_names=('softmax_label',),
                  logger=logging, context=ctx.cpu(), work_load_list=None, fixed_param_names=None,
-                 ori_shapes={}, ori_indexes={}):
+                 ori_parames={}, ori_indexes={}):
         super(Module, self).__init__(logger=logger)
 
         if isinstance(context, ctx.Context):
@@ -79,8 +79,12 @@ class Module(BaseModule):
         self._data_shapes = None
         self._label_shapes = None
 
-        self._ori_shapes = ori_shapes
+        self._ori_shapes = {}
         self._ori_indexes = ori_indexes
+        self._ori_parames = ori_parames
+        for key in self._ori_parames:
+            oripa = self._ori_parames[key]
+            self._ori_shapes[key] = oripa.shape
 
     def _reset_bind(self):
         """Internal function to reset binded state."""
@@ -88,6 +92,14 @@ class Module(BaseModule):
         self._exec_group = None
         self._data_shapes = None
         self._label_shapes = None
+
+    @property
+    def ori_indexes(self):
+        return self._ori_indexes
+
+    @ori_indexes.setter
+    def ori_indexes(self, val):
+        self._ori_indexes = val
 
     @property
     def data_names(self):
@@ -359,6 +371,7 @@ class Module(BaseModule):
                                 param_arrays=self._exec_group.param_arrays,
                                 arg_params=self._arg_params,
                                 param_names=self._param_names,
+                                ori_params=self._ori_parames,
                                 ori_shapes=self._ori_shapes,
                                 ori_indexes=self._ori_indexes,
                                 update_on_kvstore=update_on_kvstore)

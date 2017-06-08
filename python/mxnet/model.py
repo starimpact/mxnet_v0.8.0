@@ -92,7 +92,8 @@ def _initialize_kvstore_partial(kvstore, param_arrays, arg_params, param_names,
     for idx, param_on_devs in enumerate(param_arrays):
         name = param_names[idx]
         if name in ori_shapes.keys():
-            kvstore.init_partial(idx, ori_params[name], arg_params[name].shape, ori_indexes[name])
+            ori_indextmp = np.asarray(range(ori_params[name].shape[0]), dtype=np.int32)
+            kvstore.init_partial(idx, ori_params[name], arg_params[name].shape, ori_indextmp)
             kvstore.pull_partial(idx, param_on_devs, ori_shapes[name], ori_indexes[name], priority=-idx)
             continue
         kvstore.init(idx, arg_params[name])

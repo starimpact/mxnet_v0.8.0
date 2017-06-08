@@ -297,7 +297,9 @@ class KVStoreDist : public KVStoreLocal {
       // check index order
       for (size_t idx = 0; idx < ori_index.size() - 1; idx++)
       {
-        CHECK_LT(ori_index[idx], ori_index[idx+1]) << "The original indexes and related data must be ascending sorted";
+        CHECK_LT(ori_index[idx], ori_index[idx+1]) \
+           << "The original indexes and related data must be ascending sorted, " \
+           << idx << "[" << ori_index.size() << "]:" << ori_index[idx];
       }
       NDArray merged = do_merge ? comm_->Reduce(key, vals, priority) : vals[0];
 
@@ -518,7 +520,7 @@ class KVStoreDist : public KVStoreLocal {
           pskv.size += realpart_size * dimnum;
           realstart = realpart_end;
         }
-        CHECK_EQ(static_cast<size_t>(pskv.size), size);
+        CHECK_EQ(static_cast<size_t>(pskv.size), size) << ", " << pskv.size << ", " << size;
       }
     }
     return pskv;

@@ -57,7 +57,6 @@ class KVStoreLocal : public KVStore {
     for (size_t i = 0; i < keys.size(); ++i) {
       CHECK(local_.find(keys[i]) == local_.end())
           << "duplicate init of key " << keys[i];
-      CHECK()
       local_[keys[i]] = values[i].Copy(pinned_ctx_);
       local_partial_[keys[i]] = NDArray(ori_shapes[i], pinned_ctx_);
       CopyFromTo_IndexFrom(local_[keys[i]], &local_partial_[keys[i]], ori_indexes[i]);

@@ -12,6 +12,7 @@ from .. import optimizer as opt
 from .executor_group import DataParallelExecutorGroup
 from ..model import _create_kvstore, _initialize_kvstore, _update_params, _update_params_on_kvstore
 from ..model import _initialize_kvstore_partial, _update_params_on_kvstore_partial
+from ..model import _pull_params_on_kvstore_partial
 from ..initializer import Uniform
 
 from .base_module import BaseModule
@@ -96,9 +97,8 @@ class Module(BaseModule):
     def ori_indexes(self):
         return self._ori_indexes
 
-    @ori_indexes.setter
-    def ori_indexes(self, val):
-        self._ori_indexes = val
+    def pull_params(self):
+        _pull_params_on_kvstore_partial(self._)
 
     @property
     def data_names(self):
@@ -141,6 +141,13 @@ class Module(BaseModule):
         """
         assert self.binded
         return self._exec_group.get_output_shapes()
+
+    def pull_params(self):
+        _pull_params_on_kvstore_partial(self._exec_group.param_arrays,
+                                      self._param_names,
+                                      self._ori_shapes,
+                                      self._ori_indexes,
+                                      self._kvstore)
 
     def get_params(self):
         """Get current parameters.
@@ -376,6 +383,7 @@ class Module(BaseModule):
                                 update_on_kvstore=update_on_kvstore)
         if update_on_kvstore:
             kvstore.set_optimizer(self._optimizer)
+            kvstore.set_partial_optimizer(self._optimizer)
 
         self.optimizer_initialized = True
 

@@ -133,6 +133,25 @@ def _update_params_on_kvstore_partial(param_arrays, grad_arrays, param_names,
         # pull back the weights
         kvstore.pull(index, arg_list, priority=-index)
 
+def _pull_params_on_kvstore_partial(param_arrays, param_names,
+                                    ori_shapes, ori_indexes, kvstore):
+    """ Perform pull of param_arrays kvstore."""
+    assert (len(ori_shapes) == len(ori_indexes))
+    for index, arg_list in enumerate(param_arrays):
+        name = param_names[index]
+        if grad_list[0] is None:
+            continue
+        if name in ori_shapes.keys():
+            ori_shape = ori_shapes[name]
+            ori_index = ori_indexes[name]
+            # pull back the partial weights
+            kvstore.pull_partial(index, arg_list, ori_shape, ori_index, priority=-index)
+            continue
+        # pull back the weights
+        kvstore.pull(index, arg_list, priority=-index)
+
+
+
 def _update_params(param_arrays, grad_arrays, updater, num_device,
                    kvstore=None):
     """ Perform update of param_arrays from grad_arrays not on kvstore."""

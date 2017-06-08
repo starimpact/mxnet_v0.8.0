@@ -85,14 +85,15 @@ def _initialize_kvstore(kvstore, param_arrays, arg_params, param_names,
             kvstore.pull(idx, param_on_devs, priority=-idx)
 
 def _initialize_kvstore_partial(kvstore, param_arrays, arg_params, param_names,
-                                ori_shapes, ori_indexes,
+                                ori_params, ori_shapes, ori_indexes,
                                 update_on_kvstore):
     """ Initialize kvstore"""
     assert(len(ori_shapes) == len(ori_indexes))
     for idx, param_on_devs in enumerate(param_arrays):
         name = param_names[idx]
         if name in ori_shapes.keys():
-            kvstore.init_partial(idx, arg_params[name], ori_shapes[name], ori_indexes[name])
+            kvstore.init_partial(idx, ori_params[name], arg_params[name].shape, ori_indexes[name])
+            kvstore.pull_partial(idx, param_on_devs, ori_shapes[name], ori_indexes[name], priority=-idx)
             continue
         kvstore.init(idx, arg_params[name])
 

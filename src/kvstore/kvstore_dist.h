@@ -55,13 +55,16 @@ class KVStoreDist : public KVStoreLocal {
     }
   }
 
+  // when do init, the ori_shapes is actually the partial shapes. This is not same to push_partial.
+  // ori_indexes is keep the same size with the partial weights,
+  // values is the original complete weights. This is not same to push_partial.
   void Init_Partial(const std::vector<int>& keys,
             const std::vector<NDArray>& values,
             const std::vector<TShape>& ori_shapes,
             const std::vector<Intlist>& ori_indexes) override {
     CheckUnique(keys);
     for (size_t i = 0; i < keys.size(); ++i) {
-      comm_->Init(keys[i], values[i].shape());
+      comm_->Init(keys[i], ori_shapes[i]);
     }
     if (get_rank() == 0) {
       Push_Partial_(keys, values, ori_shapes, ori_indexes, 0, false);

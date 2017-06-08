@@ -268,8 +268,10 @@ class KVStoreDistServer {
 
       if (stored.is_none()) {
         // initialization
-        stored = NDArray(store_dshape, Context());
-        CopyFromTo_IndexTo(recved, &stored, ori_index, 0);
+        // for the initialization, rsv_dshape is actually the original weight shape of this server.
+        stored = NDArray(rsv_dshape, Context());
+        state = NDArray(rsv_dshape, Context());
+        CopyFromTo(recved, &stored, 0);
         server->Response_Partial(req_meta);
         stored.WaitToRead();
       } else if (sync_mode_) {

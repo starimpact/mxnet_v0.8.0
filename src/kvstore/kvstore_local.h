@@ -47,6 +47,9 @@ class KVStoreLocal : public KVStore {
     }
   }
 
+  // when do init, the ori_shapes is actually the partial shapes. This is not same to push_partial.
+  // ori_indexes is keep the same size with the partial weights,
+  // values is the original complete weights. This is not same to push_partial.
   void Init_Partial(const std::vector<int>& keys,
             const std::vector<NDArray>& values,
             const std::vector<TShape>& ori_shapes,
@@ -54,14 +57,14 @@ class KVStoreLocal : public KVStore {
     for (size_t i = 0; i < keys.size(); ++i) {
       CHECK(local_.find(keys[i]) == local_.end())
           << "duplicate init of key " << keys[i];
-      local_[keys[i]] = NDArray(ori_shapes[i], pinned_ctx_);
-      local_partial_[keys[i]] = values[i].Copy(pinned_ctx_);
-      CopyFromTo_IndexTo(local_partial_[keys[i]], &local_[keys[i]], ori_indexes[i]);
+      CHECK()
+      local_[keys[i]] = values[i].Copy(pinned_ctx_);
+      local_partial_[keys[i]] = NDArray(ori_shapes[i], pinned_ctx_);
+      CopyFromTo_IndexFrom(local_[keys[i]], &local_partial_[keys[i]], ori_indexes[i]);
 
-      states_[keys[i]] = NDArray(ori_shapes[i], pinned_ctx_);
-      states_partial_[keys[i]] = NDArray(values[i].shape(), pinned_ctx_);
-      CopyFromTo_IndexTo(local_partial_[keys[i]], &states_[keys[i]], ori_indexes[i]);
-      comm_->Init(keys[i], values[i].shape());
+      states_[keys[i]] = NDArray(values[i].shape(), pinned_ctx_);
+      states_partial_[keys[i]] = NDArray(ori_shapes[i], pinned_ctx_);
+      comm_->Init(keys[i], ori_shapes[i]);
     }
   }
 

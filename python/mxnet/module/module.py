@@ -41,7 +41,7 @@ class Module(BaseModule):
     """
     def __init__(self, symbol, data_names=('data',), label_names=('softmax_label',),
                  logger=logging, context=ctx.cpu(), work_load_list=None, fixed_param_names=None,
-                 ori_shapes={}, ori_indexes={}):
+                 ori_shapes={}):
         super(Module, self).__init__(logger=logger)
 
         if isinstance(context, ctx.Context):
@@ -80,7 +80,7 @@ class Module(BaseModule):
         self._label_shapes = None
 
         self._ori_shapes = ori_shapes
-        self._ori_indexes = ori_indexes
+        self._ori_indexes = None 
 
     def _reset_bind(self):
         """Internal function to reset binded state."""

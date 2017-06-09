@@ -292,6 +292,7 @@ class KVStoreDistServer {
           CopyFromTo_IndexTo(recved, &merged.array, ori_index, 0);
         } else {
           CopyFromTo_IndexTo(recved, &merged.array_tmp, ori_index, 0);
+          merged.array_tmp.WaitToRead();
           merged.array += merged.array_tmp;
         }
 
@@ -326,20 +327,27 @@ class KVStoreDistServer {
         CopyFromTo_IndexFrom(state, &state_partial, ori_index, 0);
         CopyFromTo_IndexFrom(stored, &store_partial, ori_index, 0);
         CopyFromTo(recved, &grad_partial, 0);
-        exec_.Exec([this, key, &grad_partial, &ori_index, &stored, &store_partial, &state, &state_partial](){
+        store_partial.WaitToRead();
+        state_partial.WaitToRead();
+        grad_partial.WaitToRead();
+        exec_.Exec([this, key, &grad_partial, &ori_index, &store_partial, &state_partial](){
             CHECK(partial_updater_);
             partial_updater_(key, grad_partial, &store_partial, &state_partial);
-            CopyFromTo_IndexTo(state_partial, &state, ori_index, 0);
-            CopyFromTo_IndexTo(store_partial, &stored, ori_index, 0);
           });
         server->Response_Partial(req_meta);
+        store_partial.WaitToRead();
+        state_partial.WaitToRead();
+        CopyFromTo_IndexTo(state_partial, &state, ori_index, 0);
+        CopyFromTo_IndexTo(store_partial, &stored, ori_index, 0);
         stored.WaitToRead();
+        state.WaitToRead();
       }
     } else {
       // pull
       ps::KVPairs_Partial<real_t> response;
       CHECK(!stored.is_none()) << "init " << key << " first";
       CopyFromTo_IndexFrom(stored, &store_partial, ori_index, 0);
+      store_partial.WaitToRead();
       response.keys = req_data.keys;
       response.lens = req_data.lens;
       response.ori_shape = req_data.ori_shape;

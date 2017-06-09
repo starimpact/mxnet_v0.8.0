@@ -230,7 +230,7 @@ class KVStoreDistServer {
                   ps::KVServer<real_t>* server) {
     // do some check
     CHECK_EQ(req_meta.cmd, 1) << "The req_meta.cmd must be 1";
-    CHECK_EQ(req_data.keys.size(), (size_t)1);
+    CHECK_EQ(req_data.keys.size(), (size_t)1) << ", " << req_data.keys.size();
     int ori_row = 0, dim = 0;
     if (req_meta.push) {
       CHECK_EQ(req_data.lens.size(), (size_t)1);
@@ -265,6 +265,7 @@ class KVStoreDistServer {
       TBlob recv_blob((real_t*)req_data.vals.data(), // NOLINT(*)
                       rsv_dshape, cpu::kDevMask);
       NDArray recved = NDArray(recv_blob, 0);
+      std::cout << "server handle push" << std::endl;
 
       if (stored.is_none()) {
         // initialization
@@ -340,6 +341,7 @@ class KVStoreDistServer {
       // TODO(mli) try to remove this CopyFrom
       size_t len = req_data.lens[0];
       response.vals.CopyFrom(static_cast<const float*>(store_partial.data().dptr_), len);
+      std::cout << "server handle pull:" << store_partial.shape() << std::endl;
       server->Response_Partial(req_meta, response);
     }
   }

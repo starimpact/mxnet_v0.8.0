@@ -63,11 +63,16 @@ class KVStoreDist : public KVStoreLocal {
             const std::vector<TShape>& ori_shapes,
             const std::vector<Intlist>& ori_indexes) override {
     CheckUnique(keys);
+    std::cout << "Init_Partial" << std::endl;
     for (size_t i = 0; i < keys.size(); ++i) {
       comm_->Init(keys[i], ori_shapes[i]);
     }
     if (get_rank() == 0) {
-      Push_Partial_(keys, values, ori_shapes, ori_indexes, 0, false);
+      std::vector<TShape> ori_shapestmp(ori_shapes.size());
+      for (size_t j = 0; j < ori_shapes.size(); j++) {
+        ori_shapestmp[j] = TShape(values[j].shape());
+      }
+      Push_Partial_(keys, values, ori_shapestmp, ori_indexes, 0, false);
       // wait until the push is finished
       for (const auto& v : values) {
         v.WaitToWrite();
@@ -105,6 +110,7 @@ class KVStoreDist : public KVStoreLocal {
             const std::vector<TShape>& ori_shapes,
             const std::vector<Intlist>& ori_indexes,
             int priority) override {
+    std::cout << "Push_Partial" << std::endl;
     Push_Partial_(keys, values, ori_shapes, ori_indexes, priority, true);
   }
 
@@ -119,6 +125,7 @@ class KVStoreDist : public KVStoreLocal {
             const std::vector<TShape>& ori_shapes,
             const std::vector<Intlist>& ori_indexes,
             int priority) override {
+    std::cout << "Pull_Partial" << std::endl;
     std::vector<int> uniq_keys;
     std::vector<std::vector<NDArray*> > grouped_vals;
     std::vector<TShape> grouped_ori_shapes;
@@ -137,6 +144,8 @@ class KVStoreDist : public KVStoreLocal {
       if (recv_buf.is_none()) {
         // it may happen for the first time a no-rank-0 worker pull the weight.
         recv_buf = NDArray(vals[0]->shape(), pinned_ctx_);
+      } else if (recv_buf.shape() != vals[0]->shape()) {
+        recv_buf = NDArray(vals[0]->shape(), pinned_ctx_);
       }
       real_t* data = static_cast<real_t*>(recv_buf.data().dptr_);
       size_t size = recv_buf.shape().Size();
@@ -145,7 +154,7 @@ class KVStoreDist : public KVStoreLocal {
           RunContext rctx, Engine::CallbackOnComplete cb) {
         // convert to ps keys
         PSKV& pskv = EncodeKey_Partial(key, ori_shape, ori_index);
-
+        std::cout << "pull_pskv.lens:" << pskv.lens.size() << std::endl;
         // issue pull, false means no delete
         auto vals = new ps::SArray<real_t>(data, size, false);
         auto shape2d = ori_shape.FlatTo2D();
@@ -154,7 +163,7 @@ class KVStoreDist : public KVStoreLocal {
         ori_index0.CopyFrom(ori_index.data(), ori_index.size());
         CHECK_NOTNULL(ps_worker_)->ZPull_Partial(
             pskv.keys, ori_shape0, ori_index0, pskv.ori_lens,
-            vals, &pskv.lens, 1, [vals, cb](){ delete vals; cb(); });
+            vals, pskv.lens, 1, [vals, cb](){ delete vals; cb(); });
       };
 
       CHECK_NOTNULL(Engine::Get())->PushAsync(
@@ -163,7 +172,8 @@ class KVStoreDist : public KVStoreLocal {
           {},
           {recv_buf.var()},
           FnProperty::kNormal, priority);
-
+      
+      std::cout << recv_buf.shape() << ", " << vals[0]->shape() << std::endl;
       comm_->Broadcast(key, recv_buf, grouped_vals[i], priority);
     }
   }
@@ -309,6 +319,8 @@ class KVStoreDist : public KVStoreLocal {
       } else {
         if (send_buf.is_none()) {
           send_buf = NDArray(merged.shape(), pinned_ctx_);
+        } else if (send_buf.shape() != merged.shape()) {
+          send_buf = NDArray(merged.shape(), pinned_ctx_);
         }
         CopyFromTo(merged, &send_buf);
       }
@@ -328,7 +340,7 @@ class KVStoreDist : public KVStoreLocal {
         ps::SArray<int> ori_index0;
         ori_index0.CopyFrom(ori_index.data(), ori_index.size());
         CHECK_NOTNULL(ps_worker_)->ZPush_Partial(
-            pskv.keys, vals, ori_shape0, ori_index0, pskv.lens,
+            pskv.keys, vals, pskv.lens, ori_shape0, ori_index0,
             pskv.ori_lens, 1, [cb]() { cb(); });
       };
       Engine::Get()->PushAsync(

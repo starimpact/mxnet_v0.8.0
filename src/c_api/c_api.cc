@@ -1386,6 +1386,7 @@ int MXKVStorePullPartial(KVStoreHandle handle,
     offset += dim0;
   }
   static_cast<KVStore*>(handle)->Pull_Partial(v_keys, v_vals, v_shapes, v_indexes, priority);
+  std::cout << "MXKVStorePullPartial.end" << std::endl;
   API_END();
 }
 

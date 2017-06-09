@@ -63,7 +63,7 @@ class KVStoreDist : public KVStoreLocal {
             const std::vector<TShape>& ori_shapes,
             const std::vector<Intlist>& ori_indexes) override {
     CheckUnique(keys);
-    std::cout << "Init_Partial" << std::endl;
+  //  std::cout << "Init_Partial" << std::endl;
     for (size_t i = 0; i < keys.size(); ++i) {
       comm_->Init(keys[i], ori_shapes[i]);
     }
@@ -110,7 +110,7 @@ class KVStoreDist : public KVStoreLocal {
             const std::vector<TShape>& ori_shapes,
             const std::vector<Intlist>& ori_indexes,
             int priority) override {
-    std::cout << "Push_Partial" << std::endl;
+ //   std::cout << "Push_Partial" << std::endl;
     Push_Partial_(keys, values, ori_shapes, ori_indexes, priority, true);
   }
 
@@ -125,7 +125,7 @@ class KVStoreDist : public KVStoreLocal {
             const std::vector<TShape>& ori_shapes,
             const std::vector<Intlist>& ori_indexes,
             int priority) override {
-    std::cout << "Pull_Partial" << std::endl;
+  //  std::cout << "Pull_Partial" << std::endl;
     std::vector<int> uniq_keys;
     std::vector<std::vector<NDArray*> > grouped_vals;
     std::vector<TShape> grouped_ori_shapes;
@@ -155,7 +155,7 @@ class KVStoreDist : public KVStoreLocal {
           RunContext rctx, Engine::CallbackOnComplete cb) {
         // convert to ps keys
         PSKV& pskv = EncodeKey_Partial(key, ori_shape, ori_index);
-        std::cout << "pull_pskv.lens:" << pskv.lens.size() << std::endl;
+      //  std::cout << "pull_pskv.lens:" << pskv.lens.size() << std::endl;
         // issue pull, false means no delete
         auto vals = new ps::SArray<real_t>(data, size, false);
         auto shape2d = ori_shape.FlatTo2D();
@@ -174,7 +174,7 @@ class KVStoreDist : public KVStoreLocal {
           {recv_buf.var()},
           FnProperty::kNormal, priority);
       
-      std::cout << recv_buf.shape() << ", " << vals[0]->shape() << std::endl;
+     // std::cout << recv_buf.shape() << ", " << vals[0]->shape() << std::endl;
       comm_->Broadcast(key, recv_buf, grouped_vals[i], priority);
     }
   }
@@ -518,6 +518,7 @@ class KVStoreDist : public KVStoreLocal {
         pskv.size += size - realstart * dimnum;
       } else {
         // parition it to all servers
+        size_t find_index = 0;
         for (int i = 0; i < num_servers; ++i) {
           size_t part_size =
               static_cast<size_t>(static_cast<double>(rownum)/num_servers*(i+1)) -
@@ -527,8 +528,10 @@ class KVStoreDist : public KVStoreLocal {
           ps::Key ps_key = krs[i].begin() + key;
           CHECK_LT(ps_key, krs[i].end());
           pskv.keys.push_back(ps_key);
-          int realpart_end = std::upper_bound(oribegin, oritail, part_size-1) - oribegin;
+          find_index += part_size;
+          int realpart_end = std::upper_bound(oribegin, oritail, find_index-1) - oribegin;
           int realpart_size = realpart_end - realstart;
+          // std::cout << i << ":" << realstart << "," << realpart_end << "," << realpart_size << std::endl;
           pskv.lens.push_back(realpart_size * dimnum);
           pskv.size += realpart_size * dimnum;
           realstart = realpart_end;

@@ -229,7 +229,7 @@ class KVStoreDistServer {
                   const ps::KVPairs_Partial<real_t>& req_data,
                   ps::KVServer<real_t>* server) {
     // do some check
-    std::cout << "DataHandle_Partial" << std::endl;
+   // std::cout << "DataHandle_Partial" << std::endl;
     CHECK_EQ(req_meta.cmd, 1) << "The req_meta.cmd must be 1";
     CHECK_EQ(req_data.keys.size(), (size_t)1) << ", " << req_data.keys.size();
     int ori_row = 0, dim = 0;
@@ -251,6 +251,7 @@ class KVStoreDistServer {
     auto& stored = store_[key];
     auto& state = states_[key];
 
+   // std::cout << "server, ori_index:" << req_data.ori_index << std::endl;
     std::vector<int> ori_index(req_data.ori_index.begin(), req_data.ori_index.end());
 
     TShape rsv_dshape(2), store_dshape(2);
@@ -269,7 +270,7 @@ class KVStoreDistServer {
       TBlob recv_blob((real_t*)req_data.vals.data(), // NOLINT(*)
                       rsv_dshape, cpu::kDevMask);
       NDArray recved = NDArray(recv_blob, 0);
-      std::cout << "server handle push" << std::endl;
+    //  std::cout << "server handle push" << std::endl;
 
       if (stored.is_none()) {
         // initialization
@@ -325,9 +326,11 @@ class KVStoreDistServer {
         CopyFromTo_IndexFrom(state, &state_partial, ori_index, 0);
         CopyFromTo_IndexFrom(stored, &store_partial, ori_index, 0);
         CopyFromTo(recved, &grad_partial, 0);
-        exec_.Exec([this, key, &grad_partial, &store_partial, &state_partial](){
+        exec_.Exec([this, key, &grad_partial, &ori_index, &stored, &store_partial, &state, &state_partial](){
             CHECK(partial_updater_);
             partial_updater_(key, grad_partial, &store_partial, &state_partial);
+            CopyFromTo_IndexTo(state_partial, &state, ori_index, 0);
+            CopyFromTo_IndexTo(store_partial, &stored, ori_index, 0);
           });
         server->Response_Partial(req_meta);
         stored.WaitToRead();
@@ -345,7 +348,8 @@ class KVStoreDistServer {
       // TODO(mli) try to remove this CopyFrom
       size_t len = req_data.lens[0];
       response.vals.CopyFrom(static_cast<const float*>(store_partial.data().dptr_), len);
-      std::cout << "server handle pull:" << store_partial.shape() << std::endl;
+     // std::cout << "server handle pull:" << store_partial.shape() 
+     //           << ", " << response.vals << std::endl;
       server->Response_Partial(req_meta, response);
     }
   }

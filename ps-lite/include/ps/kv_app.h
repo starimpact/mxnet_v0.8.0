@@ -487,7 +487,7 @@ void KVServer<Val>::Process(const Message& msg) {
     CHECK(request_handle_);
     request_handle_(meta, data, this);
   } else if (meta.cmd == 1) {
-    std::cout << "server process, cmd:" << meta.cmd << std::endl;
+  //  std::cout << "server process, cmd:" << meta.cmd << std::endl;
     KVPairs_Partial<Val> data;
     CHECK_EQ(n, 6) << "The partial info size must be 6";
     data.keys = msg.data[0];
@@ -497,7 +497,7 @@ void KVServer<Val>::Process(const Message& msg) {
     data.ori_shape = msg.data[4];
     data.ori_index = msg.data[5];
     CHECK(request_partial_handle_);
-    std::cout << "server process, before request_partial_handle." << std::endl;
+  //  std::cout << "server process, before request_partial_handle." << std::endl;
     request_partial_handle_(meta, data, this);
   }
 }
@@ -641,12 +641,12 @@ void KVWorker<Val>::DefaultSlicer_Partial(
 
   CHECK_EQ(send.ori_lens.size(), send.lens.size()) << "The ori_lens size must equal lens size";
 
-  std::cout << "default_slice_partial, send.lens:" << send.lens << std::endl;
+ // std::cout << "default_slice_partial, send.lens:" << send.lens << std::endl;
   // slice
   val_begin = send.lens[0];
   val_end = val_begin;
   for (size_t i = 0; i < n; ++i) {
-    std::cout << "default_slice_partial, pos:" << pos[i] << "," << pos[i+1] << std::endl;
+  //  std::cout << "default_slice_partial, pos:" << pos[i] << "," << pos[i+1] << std::endl;
     if (pos[i+1] == pos[i]) {
       sliced->at(i).first = false;
       continue;
@@ -666,8 +666,8 @@ void KVWorker<Val>::DefaultSlicer_Partial(
     int row_end = val_end / dim;
     kv.ori_index = send.ori_index.segment(row_begin, row_end);
 
-    std::cout << "default_slice_partial, " << i \
-              << ", kv.ori_index:" << kv.ori_index << std::endl;
+   // std::cout << "default_slice_partial, " << i 
+   //           << ", kv.ori_index:" << kv.ori_index << std::endl;
 
     kv.ori_lens = send.ori_lens.segment(pos[i], pos[i+1]);
     for (int l : kv.ori_lens) oval_end += l;
@@ -680,17 +680,17 @@ void KVWorker<Val>::DefaultSlicer_Partial(
     val_begin = val_end;
     oval_begin = oval_end;
 
-    std::cout << "default_slice_partial, " << i \
-              << ", kv.ori_shape:" << kv.ori_shape << std::endl;
-
-    std::cout << "default_slice_partial, " << i \
-              << ", kv.lens:" << kv.lens << std::endl;
-
-    std::cout << "default_slice_partial, " << i \
-              << ", kv.vals:" << kv.vals << std::endl;
-
-    std::cout << "default_slice_partial, " << i \
-              << ", kv.ori_lens:" << kv.ori_lens << std::endl;
+//    std::cout << "default_slice_partial, " << i 
+//              << ", kv.ori_shape:" << kv.ori_shape << std::endl;
+//
+//    std::cout << "default_slice_partial, " << i 
+//              << ", kv.lens:" << kv.lens << std::endl;
+//
+//    std::cout << "default_slice_partial, " << i 
+//              << ", kv.vals:" << kv.vals << std::endl;
+//
+//    std::cout << "default_slice_partial, " << i 
+//              << ", kv.ori_lens:" << kv.ori_lens << std::endl;
 
 
   }
@@ -741,7 +741,7 @@ void KVWorker<Val>::Send_Partial(int timestamp, bool push, int cmd, const KVPair
   SlicedKVs_Partial sliced;
   slicer_partial_(kvs, Postoffice::Get()->GetServerKeyRanges(), &sliced);
 
-  std::cout << "Send_Partial:after slicer_partial_ push:" << push << std::endl;
+ // std::cout << "Send_Partial:after slicer_partial_ push:" << push << std::endl;
   // need to add response first, since it will not always trigger the callback
   int skipped = 0;
   for (size_t i = 0; i < sliced.size(); ++i) {
@@ -771,7 +771,7 @@ void KVWorker<Val>::Send_Partial(int timestamp, bool push, int cmd, const KVPair
       msg.AddData(kvs.ori_shape);
       msg.AddData(kvs.ori_index);
     }
-    std::cout << "ready to send " << i << "'th message. push:" << push << std::endl;
+   // std::cout << "ready to send " << i << "'th message. push:" << push << std::endl;
     Postoffice::Get()->van()->Send(msg);
   }
 }
@@ -908,7 +908,7 @@ int KVWorker<Val>::Pull_Partial_(
       mu_.lock();
       auto& kvs = recv_kvs_partial_[ts];
       mu_.unlock();
-      std::cout << "Pull_Partial_ Callback" << std::endl;
+     // std::cout << "Pull_Partial_ Callback" << std::endl;
 
       // do check
       size_t total_key = 0, total_val = 0;
@@ -936,7 +936,8 @@ int KVWorker<Val>::Pull_Partial_(
                   return a.keys.front() < b.keys.front();
         });
 
-      CHECK_EQ(vals->size(), total_val);
+      CHECK_EQ(vals->size(), total_val) 
+          << ", " << vals->size() << ", " << total_val << std::endl;
 
       Val* p_vals = vals->data();
       CHECK_EQ(lens.size(), keys.size());
@@ -946,7 +947,10 @@ int KVWorker<Val>::Pull_Partial_(
       for (const auto& s : kvs) {
         memcpy(p_vals, s.vals.data(), s.vals.size() * sizeof(Val));
         p_vals += s.vals.size();
-        CHECK_EQ(lens[idx], s.lens[0]);
+        CHECK_EQ(lens[idx], s.lens[0])
+            << ", " << idx << ":" << lens[idx]
+            << ", " << s.lens[0] << std::endl;
+        idx++;
       }
 
       mu_.lock();
@@ -955,7 +959,7 @@ int KVWorker<Val>::Pull_Partial_(
       if (cb) cb();
     });
 
-  std::cout << "Pull_Partial_" << std::endl;
+ // std::cout << "Pull_Partial_" << std::endl;
   KVPairs_Partial<Val> kvs;
   kvs.keys = keys;
   kvs.lens = lens;

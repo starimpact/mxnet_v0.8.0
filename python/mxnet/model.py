@@ -95,6 +95,7 @@ def _initialize_kvstore_partial(kvstore, param_arrays, arg_params, param_names,
             ori_indextmp = np.asarray(range(ori_params[name].shape[0]), dtype=np.int32)
             kvstore.init_partial(idx, ori_params[name], arg_params[name].shape, ori_indextmp)
             kvstore.pull_partial(idx, param_on_devs, ori_shapes[name], ori_indexes[name], priority=-idx)
+            print param_on_devs[0].asnumpy()
             continue
         kvstore.init(idx, arg_params[name])
 
@@ -128,6 +129,7 @@ def _update_params_on_kvstore_partial(param_arrays, grad_arrays, param_names,
             kvstore.push_partial(index, grad_list, ori_shape, ori_index, priority=-index)
             # pull back the partial weights
             kvstore.pull_partial(index, arg_list, ori_shape, ori_index, priority=-index)
+            print arg_list[0].asnumpy()
             continue
         # push gradient, priority is negative index
         kvstore.push(index, grad_list, priority=-index)

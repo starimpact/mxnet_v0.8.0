@@ -147,6 +147,7 @@ class KVStoreDist : public KVStoreLocal {
       } else if (recv_buf.shape() != vals[0]->shape()) {
         recv_buf = NDArray(vals[0]->shape(), pinned_ctx_);
       }
+      CopyFromTo(*vals[0], &recv_buf);
       real_t* data = static_cast<real_t*>(recv_buf.data().dptr_);
       size_t size = recv_buf.shape().Size();
 

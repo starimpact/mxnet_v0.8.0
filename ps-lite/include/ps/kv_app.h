@@ -487,6 +487,7 @@ void KVServer<Val>::Process(const Message& msg) {
     CHECK(request_handle_);
     request_handle_(meta, data, this);
   } else if (meta.cmd == 1) {
+    std::cout << "server process, cmd:" << meta.cmd << std::endl;
     KVPairs_Partial<Val> data;
     CHECK_EQ(n, 6) << "The partial info size must be 6";
     data.keys = msg.data[0];
@@ -496,6 +497,7 @@ void KVServer<Val>::Process(const Message& msg) {
     data.ori_shape = msg.data[4];
     data.ori_index = msg.data[5];
     CHECK(request_partial_handle_);
+    std::cout << "server process, before request_partial_handle." << std::endl;
     request_partial_handle_(meta, data, this);
   }
 }
@@ -687,6 +689,9 @@ void KVWorker<Val>::DefaultSlicer_Partial(
     std::cout << "default_slice_partial, " << i \
               << ", kv.vals:" << kv.vals << std::endl;
 
+    std::cout << "default_slice_partial, " << i \
+              << ", kv.ori_lens:" << kv.ori_lens << std::endl;
+
 
   }
 }
@@ -766,6 +771,7 @@ void KVWorker<Val>::Send_Partial(int timestamp, bool push, int cmd, const KVPair
       msg.AddData(kvs.ori_shape);
       msg.AddData(kvs.ori_index);
     }
+    std::cout << "ready to send " << i << "'th message. push:" << push << std::endl;
     Postoffice::Get()->van()->Send(msg);
   }
 }

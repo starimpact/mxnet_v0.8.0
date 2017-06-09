@@ -229,19 +229,23 @@ class KVStoreDistServer {
                   const ps::KVPairs_Partial<real_t>& req_data,
                   ps::KVServer<real_t>* server) {
     // do some check
+    std::cout << "DataHandle_Partial" << std::endl;
     CHECK_EQ(req_meta.cmd, 1) << "The req_meta.cmd must be 1";
     CHECK_EQ(req_data.keys.size(), (size_t)1) << ", " << req_data.keys.size();
     int ori_row = 0, dim = 0;
     if (req_meta.push) {
-      CHECK_EQ(req_data.lens.size(), (size_t)1);
       CHECK_EQ(req_data.vals.size(), (size_t)req_data.lens[0]);
-      CHECK_EQ(req_data.ori_lens.size(), (size_t)1);
-      CHECK_EQ(req_data.ori_shape.size(), (size_t)2);
-      ori_row = req_data.ori_shape[0];
-      dim = req_data.ori_shape[1];
-      CHECK_EQ(req_data.ori_index.size(), (std::size_t)req_data.lens[0]/dim);
-      CHECK_EQ(req_data.ori_lens[0], ori_row * dim);
     }
+
+    CHECK_EQ(req_data.lens.size(), (size_t)1);
+    CHECK_EQ(req_data.ori_lens.size(), (size_t)1);
+    CHECK_EQ(req_data.ori_shape.size(), (size_t)2);
+
+    ori_row = req_data.ori_shape[0];
+    dim = req_data.ori_shape[1];
+ 
+    CHECK_EQ(req_data.ori_index.size(), (std::size_t)req_data.lens[0]/dim);
+    CHECK_EQ(req_data.ori_lens[0], ori_row * dim);
 
     int key = DecodeKey(req_data.keys[0]);
     auto& stored = store_[key];

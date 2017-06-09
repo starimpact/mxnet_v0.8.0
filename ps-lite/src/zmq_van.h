@@ -147,6 +147,7 @@ class ZMQVan : public Van {
       zmq_msg_t data_msg;
       SArray<char>* data = new SArray<char>(msg.data[i]);
       int data_size = data->size();
+//      std::cout << "SendMsg:" << i << ":" << data_size << std::endl;
       zmq_msg_init_data(&data_msg, data->data(), data->size(), FreeData, data);
       if (i == n - 1) tag = 0;
       while (true) {
@@ -201,6 +202,7 @@ class ZMQVan : public Van {
             zmq_msg_close(zmsg);
             delete zmsg;
           });
+//        std::cout << "RecvMsg:" << i << ":" << size << std::endl;
         msg->data.push_back(data);
         if (!zmq_msg_more(zmsg)) { break; }
       }

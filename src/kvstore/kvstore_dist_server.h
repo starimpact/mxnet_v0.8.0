@@ -337,6 +337,7 @@ class KVStoreDistServer {
         server->Response_Partial(req_meta);
         store_partial.WaitToRead();
         state_partial.WaitToRead();
+        //std::cout << "server push handle:" << ori_index.size() << std::endl;
         CopyFromTo_IndexTo(state_partial, &state, ori_index, 0);
         CopyFromTo_IndexTo(store_partial, &stored, ori_index, 0);
         stored.WaitToRead();
@@ -353,6 +354,7 @@ class KVStoreDistServer {
       response.ori_shape = req_data.ori_shape;
       response.ori_lens = req_data.ori_lens;
       response.ori_index = req_data.ori_index;
+      //std::cout << "server pull handle:" << req_data.ori_index.size() << std::endl;
       // TODO(mli) try to remove this CopyFrom
       size_t len = req_data.lens[0];
       response.vals.CopyFrom(static_cast<const float*>(store_partial.data().dptr_), len);

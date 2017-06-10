@@ -937,7 +937,10 @@ int KVWorker<Val>::Pull_Partial_(
         });
 
       CHECK_EQ(vals->size(), total_val) 
-          << ", " << vals->size() << ", " << total_val << std::endl;
+          << ", " << vals->size() << ", " 
+          << total_val << ", " << realstart << ", "
+          << ori_shape << ", " << lens << ", "
+          << total_key << ", " << ori_index << std::endl;
 
       Val* p_vals = vals->data();
       CHECK_EQ(lens.size(), keys.size());

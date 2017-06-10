@@ -740,6 +740,7 @@ void KVWorker<Val>::Send_Partial(int timestamp, bool push, int cmd, const KVPair
   // slice the message
   SlicedKVs_Partial sliced;
   slicer_partial_(kvs, Postoffice::Get()->GetServerKeyRanges(), &sliced);
+  CHECK(kvs.ori_shape[1]==128) << kvs.ori_shape << std::endl;
 
  // std::cout << "Send_Partial:after slicer_partial_ push:" << push << std::endl;
   // need to add response first, since it will not always trigger the callback
@@ -774,6 +775,7 @@ void KVWorker<Val>::Send_Partial(int timestamp, bool push, int cmd, const KVPair
    // std::cout << "ready to send " << i << "'th message. push:" << push << std::endl;
     Postoffice::Get()->van()->Send(msg);
   }
+  CHECK(kvs.ori_shape[1]==128) << kvs.ori_shape << std::endl;
 }
 
 template <typename Val>
@@ -903,12 +905,13 @@ int KVWorker<Val>::Pull_Partial_(
     const SArray<int>& ori_index, const SArray<int>& ori_lens,
     C* vals, const SArray<int>& lens, int cmd, const Callback& cb) {
   int ts = obj_->NewRequest(kServerGroup);
+  CHECK(ori_shape[1]==128) << "," << ori_shape << std::endl;
   AddCallback(ts, [this, ts, keys, ori_shape, ori_index, 
                    ori_lens, vals, lens, cb]() mutable {
       mu_.lock();
       auto& kvs = recv_kvs_partial_[ts];
       mu_.unlock();
-     // std::cout << "Pull_Partial_ Callback" << std::endl;
+      CHECK(ori_shape[1]==128) << "," << "Pull_Partial_ Callback" << ori_shape << ori_index << ori_lens << *vals << lens << std::endl;
 
       // do check
       size_t total_key = 0, total_val = 0;
@@ -947,14 +950,20 @@ int KVWorker<Val>::Pull_Partial_(
       
       p_vals += realstart;
       size_t idx = 1;
+      size_t srcsize = 0;
       for (const auto& s : kvs) {
         memcpy(p_vals, s.vals.data(), s.vals.size() * sizeof(Val));
+        srcsize += s.vals.size();
         p_vals += s.vals.size();
         CHECK_EQ(lens[idx], s.lens[0])
             << ", " << idx << ":" << lens[idx]
             << ", " << s.lens[0] << std::endl;
+        CHECK_EQ(s.vals.size(), s.lens[0])
+            << ", " << idx << ":" << lens[idx]
+            << ", " << s.vals << std::endl;
         idx++;
       }
+      CHECK_EQ(p_vals, vals->end()) << p_vals << "," << vals->end() << std::endl;
 
       mu_.lock();
       recv_kvs_partial_.erase(ts);

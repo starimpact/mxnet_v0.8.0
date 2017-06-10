@@ -839,7 +839,9 @@ def get_partial_updater(optimizer):
   #  import numpy as np
     def updater(index, grad, weight, state):
         """updater for kvstore"""
+        print 0, state.asnumpy()
         optimizer.update(index, weight, grad, state)
+        print 1, state.asnumpy()
     #    print '=====', weight.asnumpy().shape, grad.asnumpy().shape, state.asnumpy().shape
     #    print '=====', np.sum(weight.asnumpy(), axis=1)
 

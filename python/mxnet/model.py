@@ -152,8 +152,6 @@ def _pull_params_on_kvstore_partial(param_arrays, param_names,
     assert (len(ori_shapes) == len(ori_indexes))
     for index, arg_list in enumerate(param_arrays):
         name = param_names[index]
-        if grad_list[0] is None:
-            continue
         if name in ori_shapes.keys():
             ori_shape = ori_shapes[name]
             ori_index = ori_indexes[name]

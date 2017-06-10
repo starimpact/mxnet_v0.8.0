@@ -147,9 +147,10 @@ class KVStoreDist : public KVStoreLocal {
       } else if (recv_buf.shape() != vals[0]->shape()) {
         recv_buf = NDArray(vals[0]->shape(), pinned_ctx_);
       }
-      CopyFromTo(*vals[0], &recv_buf);
+      CopyFromTo(*vals[0], &recv_buf); // promise thre are no zeros rows
       real_t* data = static_cast<real_t*>(recv_buf.data().dptr_);
       size_t size = recv_buf.shape().Size();
+      //std::cout << i << ":vals.size():" << vals.size() << "," << vals[0]->shape() << recv_buf.shape() << ori_shape << (size_t)(&recv_buf) << std::endl;
 
       auto pull_from_servers = [this, key, data, size, ori_shape, ori_index](
           RunContext rctx, Engine::CallbackOnComplete cb) {
@@ -159,7 +160,10 @@ class KVStoreDist : public KVStoreLocal {
         // issue pull, false means no delete
         auto vals = new ps::SArray<real_t>(data, size, false);
         auto shape2d = ori_shape.FlatTo2D();
-        ps::SArray<int> ori_shape0((int*)shape2d.shape_, 2, false);
+        ps::SArray<int> ori_shape0(2);
+        ori_shape0[0] = shape2d[0];
+        ori_shape0[1] = shape2d[1];
+        CHECK(ori_shape0[1]==128) << ", " << ori_shape0 << std::endl;
         ps::SArray<int> ori_index0;
         ori_index0.CopyFrom(ori_index.data(), ori_index.size());
         CHECK_NOTNULL(ps_worker_)->ZPull_Partial(

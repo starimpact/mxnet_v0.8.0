@@ -163,7 +163,7 @@ class KVStoreDist : public KVStoreLocal {
         ps::SArray<int> ori_shape0(2);
         ori_shape0[0] = shape2d[0];
         ori_shape0[1] = shape2d[1];
-        CHECK(ori_shape0[1]==128) << ", " << ori_shape0 << std::endl;
+       // CHECK(ori_shape0[1]==128) << ", " << ori_shape0 << std::endl;
         ps::SArray<int> ori_index0;
         ori_index0.CopyFrom(ori_index.data(), ori_index.size());
         CHECK_NOTNULL(ps_worker_)->ZPull_Partial(

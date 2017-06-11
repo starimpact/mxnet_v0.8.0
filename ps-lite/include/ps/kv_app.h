@@ -740,7 +740,7 @@ void KVWorker<Val>::Send_Partial(int timestamp, bool push, int cmd, const KVPair
   // slice the message
   SlicedKVs_Partial sliced;
   slicer_partial_(kvs, Postoffice::Get()->GetServerKeyRanges(), &sliced);
-  CHECK(kvs.ori_shape[1]==128) << kvs.ori_shape << std::endl;
+  //CHECK(kvs.ori_shape[1]==128) << kvs.ori_shape << std::endl;
 
  // std::cout << "Send_Partial:after slicer_partial_ push:" << push << std::endl;
   // need to add response first, since it will not always trigger the callback
@@ -775,7 +775,7 @@ void KVWorker<Val>::Send_Partial(int timestamp, bool push, int cmd, const KVPair
    // std::cout << "ready to send " << i << "'th message. push:" << push << std::endl;
     Postoffice::Get()->van()->Send(msg);
   }
-  CHECK(kvs.ori_shape[1]==128) << kvs.ori_shape << std::endl;
+  //CHECK(kvs.ori_shape[1]==128) << kvs.ori_shape << std::endl;
 }
 
 template <typename Val>
@@ -905,13 +905,13 @@ int KVWorker<Val>::Pull_Partial_(
     const SArray<int>& ori_index, const SArray<int>& ori_lens,
     C* vals, const SArray<int>& lens, int cmd, const Callback& cb) {
   int ts = obj_->NewRequest(kServerGroup);
-  CHECK(ori_shape[1]==128) << "," << ori_shape << std::endl;
+  //CHECK(ori_shape[1]==128) << "," << ori_shape << std::endl;
   AddCallback(ts, [this, ts, keys, ori_shape, ori_index, 
                    ori_lens, vals, lens, cb]() mutable {
       mu_.lock();
       auto& kvs = recv_kvs_partial_[ts];
       mu_.unlock();
-      CHECK(ori_shape[1]==128) << "," << "Pull_Partial_ Callback" << ori_shape << ori_index << ori_lens << *vals << lens << std::endl;
+      //CHECK(ori_shape[1]==128) << "," << "Pull_Partial_ Callback" << ori_shape << ori_index << ori_lens << *vals << lens << std::endl;
 
       // do check
       size_t total_key = 0, total_val = 0;

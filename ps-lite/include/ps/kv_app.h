@@ -653,22 +653,30 @@ void KVWorker<Val>::DefaultSlicer_Partial(
     }
     sliced->at(i).first = true;
     auto& kv = sliced->at(i).second;
+//    CHECK(pos[i] <= pos[i+1]) << ", -----1\n";
     kv.keys = send.keys.segment(pos[i], pos[i+1]);
     kv.ori_shape.resize(2);
     kv.ori_shape[1] = dim;
     
+//    CHECK(pos[i] <= pos[i+1]) << ", -----2\n";
     kv.lens = send.lens.segment(pos[i], pos[i+1]);
     for (int l : kv.lens) val_end += l;
     if (send.vals.size() > 0) {
+//      CHECK(val_begin <= val_end) << ", -----3\n";
       kv.vals = send.vals.segment(val_begin, val_end);
     }
     int row_begin = val_begin / dim;
     int row_end = val_end / dim;
+//    CHECK(row_begin <= row_end) << ", " << send.vals.size()
+//            << ", " << i << ", " << kv.lens << ", " << send.lens
+//            << ", " << row_begin << ", " << row_end
+//            << ", -----4\n";
     kv.ori_index = send.ori_index.segment(row_begin, row_end);
 
    // std::cout << "default_slice_partial, " << i 
    //           << ", kv.ori_index:" << kv.ori_index << std::endl;
 
+//    CHECK(pos[i] <= pos[i+1]) << ", -----5\n";
     kv.ori_lens = send.ori_lens.segment(pos[i], pos[i+1]);
     for (int l : kv.ori_lens) oval_end += l;
     int orow_begin = oval_begin / dim;

@@ -506,6 +506,10 @@ class KVStoreDist : public KVStoreLocal {
       pskv.size = 0;
       // find end of negative row
       int realstart = std::lower_bound(oribegin, oritail, 0) - oribegin;
+//      if (realstart > 10) {
+//        for (int i = 0; i < 20; i++) std::cout << realstart-10+i << ":" << ori_index[realstart-10+i] << ",";
+//        std::cout << std::endl;
+//      }
       pskv.lens.push_back(realstart * dimnum);
       pskv.ori_lens.push_back(0);
       pskv.size += realstart * dimnum;
@@ -533,9 +537,17 @@ class KVStoreDist : public KVStoreLocal {
           CHECK_LT(ps_key, krs[i].end());
           pskv.keys.push_back(ps_key);
           find_index += part_size;
-          int realpart_end = std::upper_bound(oribegin, oritail, find_index-1) - oribegin;
+//      if (realstart > 10) {
+//        for (int i = 0; i < 20; i++) std::cout << i << "[:]" << ori_index[i] << ",";
+//        std::cout << std::endl;
+//      }
+          int findwhat = find_index-1;
+//          std::cout << i << ":" << findwhat << std::endl;
+          int realpart_end = std::upper_bound(oribegin, oritail, findwhat) - oribegin;
           int realpart_size = realpart_end - realstart;
-          // std::cout << i << ":" << realstart << "," << realpart_end << "," << realpart_size << std::endl;
+//          std::cout << i << ":" << find_index-1 << "," << oritail - oribegin 
+//                    << "," << realstart << "," << realpart_end
+//                    << "," << realpart_size << std::endl;
           pskv.lens.push_back(realpart_size * dimnum);
           pskv.size += realpart_size * dimnum;
           realstart = realpart_end;
@@ -543,6 +555,7 @@ class KVStoreDist : public KVStoreLocal {
         CHECK_EQ(static_cast<size_t>(pskv.size), size) << ", " << pskv.size << ", " << size;
       }
     }
+//    std::cout << "pskv:" << pskv.lens << std::endl;
     return pskv;
   }
 

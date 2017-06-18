@@ -228,6 +228,7 @@ class KVStoreDistServer {
   void DataHandle_Partial(const ps::KVMeta& req_meta,
                   const ps::KVPairs_Partial<real_t>& req_data,
                   ps::KVServer<real_t>* server) {
+#define DBG_SHOW_TIME 0
     // do some check
    // std::cout << "DataHandle_Partial" << std::endl;
     CHECK_EQ(req_meta.cmd, 1) << "The req_meta.cmd must be 1";
@@ -320,16 +321,52 @@ class KVStoreDistServer {
         }
       } else {
         // async push
+#if DBG_SHOW_TIME 
+        clock_t start, end;
+        float cost0, cost1, cost2;
 
+        clock_t start1, end1;
+        float cost_0, cost_1;
+
+        start = clock();
+#endif
         NDArray state_partial(rsv_dshape, Context());
         NDArray grad_partial(rsv_dshape, Context());
 
+#if DBG_SHOW_TIME 
+        start1 = clock();
+#endif
         CopyFromTo_IndexFrom(state, &state_partial, ori_index, 0);
-        CopyFromTo_IndexFrom(stored, &store_partial, ori_index, 0);
-        CopyFromTo(recved, &grad_partial, 0);
-        store_partial.WaitToRead();
+#if DBG_SHOW_TIME 
+        end1 = clock();
+        cost_0 = (float)(end1 - start1)*1000 / CLOCKS_PER_SEC;
+#endif
+
+#if DBG_SHOW_TIME 
+        start1 = clock();
+#endif
         state_partial.WaitToRead();
+#if DBG_SHOW_TIME 
+        end1 = clock();
+        cost_1 = (float)(end1 - start1)*1000 / CLOCKS_PER_SEC;
+#endif
+
+        CopyFromTo_IndexFrom(stored, &store_partial, ori_index, 0);
+        store_partial.WaitToRead();
+
+        CopyFromTo(recved, &grad_partial, 0);
         grad_partial.WaitToRead();
+
+#if DBG_SHOW_TIME 
+        end = clock();
+        cost0 = (float)(end - start)*1000 / CLOCKS_PER_SEC;
+#endif
+        //printf("async push time cost:%.3f ms", cost * 1000);
+
+#if DBG_SHOW_TIME 
+        start = clock();
+#endif
+
         exec_.Exec([this, key, &grad_partial, &ori_index, &store_partial, &state_partial](){
             CHECK(partial_updater_);
             partial_updater_(key, grad_partial, &store_partial, &state_partial);
@@ -337,14 +374,41 @@ class KVStoreDistServer {
         server->Response_Partial(req_meta);
         store_partial.WaitToRead();
         state_partial.WaitToRead();
+
+#if DBG_SHOW_TIME 
+        end = clock();
+        cost1 = (float)(end - start)*1000 / CLOCKS_PER_SEC;
+#endif
+ 
+#if DBG_SHOW_TIME 
+        start = clock();
+#endif
+
         //std::cout << "server push handle:" << ori_index.size() << std::endl;
         CopyFromTo_IndexTo(state_partial, &state, ori_index, 0);
         CopyFromTo_IndexTo(store_partial, &stored, ori_index, 0);
         stored.WaitToRead();
         state.WaitToRead();
+       
+#if DBG_SHOW_TIME 
+        end = clock();
+        cost2 = (float)(end - start)*1000 / CLOCKS_PER_SEC;
+        //printf("async push time cost:%.3f ms", cost * 1000);
+        std::cout << "async push time cost[ms]: " 
+                  << cost0 << ", " << cost1 << ", " << cost2 
+                  << "; " << cost_0 << ", " << cost_1
+                  << "; " << rsv_dshape
+                  << std::endl;
+#endif
       }
     } else {
       // pull
+#if DBG_SHOW_TIME 
+      clock_t start, end;
+      float cost;
+      start = clock();
+#endif
+
       ps::KVPairs_Partial<real_t> response;
       CHECK(!stored.is_none()) << "init " << key << " first";
       CopyFromTo_IndexFrom(stored, &store_partial, ori_index, 0);
@@ -360,6 +424,12 @@ class KVStoreDistServer {
       response.vals.CopyFrom(static_cast<const float*>(store_partial.data().dptr_), len);
      // std::cout << "server handle pull:" << store_partial.shape() 
      //           << ", " << response.vals << std::endl;
+#if DBG_SHOW_TIME 
+      end = clock();
+      cost = (float)(end - start) / CLOCKS_PER_SEC;
+      //printf("async puull time cost:%.3f ms", cost * 1000);
+      std::cout << "async pull time cost: " << cost * 1000 << " ms." << std::endl;
+#endif
       server->Response_Partial(req_meta, response);
     }
   }

@@ -78,7 +78,8 @@ def convert_model(prototxt_fname, caffemodel_fname, output_prefix=None):
             if channels == 3 or channels == 4:  # RGB or RGBA
                 if first_conv:
                     # Swapping BGR of caffe into RGB in mxnet
-                    wmat[:, [0, 2], :, :] = wmat[:, [2, 0], :, :]
+                   # wmat[:, [0, 2], :, :] = wmat[:, [2, 0], :, :]
+                   pass
 
             assert(wmat.flags['C_CONTIGUOUS'] is True)
             sys.stdout.write('converting layer {0}, wmat shape = {1}'.format(
@@ -152,7 +153,8 @@ def convert_model(prototxt_fname, caffemodel_fname, output_prefix=None):
             eps_caffe = layers_proto[bn_index].batch_norm_param.eps
             # Compensate for the epsilon shift performed in convert_symbol
             # eps_symbol = float(sym.attr_dict()[bn_name + '_moving_mean']['eps'])
-            # eps_correction = eps_caffe - eps_symbol
+            #eps_correction = eps_caffe - 0.0001#eps_symbol
+            #print('eps_correction:', eps_correction)
             # Fill parameters
             aux_params[mean_name][:] = mean * rescale_factor
             aux_params[var_name][:] = var * rescale_factor# + eps_correction

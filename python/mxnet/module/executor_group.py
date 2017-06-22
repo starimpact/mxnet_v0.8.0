@@ -37,6 +37,7 @@ def _load_general(data, targets, major_axis):
                     # pylint: enable=no-member,protected-access
                 else:
                     d_src.copyto(d_dst)
+    nd.waitall()
 
 
 def _load_data(batch, targets, major_axis):

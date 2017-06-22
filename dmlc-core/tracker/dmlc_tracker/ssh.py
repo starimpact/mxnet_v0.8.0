@@ -24,7 +24,7 @@ def sync_dir(local_dir, slave_node, slave_dir):
 def get_env(pass_envs):
     envs = []
     # get system envs
-    keys = ['DMLC_INTERFACE', 'LD_LIBRARY_PATH', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY']
+    keys = ['MXNET_ENABLE_GPU_P2P', 'DMLC_INTERFACE', 'LD_LIBRARY_PATH', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY']
     for k in keys:
         v = os.getenv(k)
         if v is not None:

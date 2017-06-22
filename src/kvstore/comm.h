@@ -252,9 +252,16 @@ class CommDevice : public Comm {
       }
     } else {
       auto& buf = merge_buf_[key];
-      CopyFromTo(src, &buf.merged, priority);
-      for (auto d : dst) {
-        CopyFromTo(buf.merged, d, priority);
+      if (src.shape() == buf.merged.shape()) {
+        CopyFromTo(src, &buf.merged, priority);
+        for (auto d : dst) {
+          CopyFromTo(buf.merged, d, priority);
+        }
+      }
+      else {
+        for (auto d : dst) {
+          CopyFromTo(src, d, priority);
+        }
       }
     }
   }

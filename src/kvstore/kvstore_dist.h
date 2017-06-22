@@ -91,7 +91,7 @@ class KVStoreDist : public KVStoreLocal {
     for (size_t i = 0; i < keys.size(); ++i) {
       comm_->Init(keys[i], values[i].shape());
     }
-    if (get_rank() == 0) {
+    if (true && get_rank() == 0) {
       Push_(keys, values, 0, false);
       // wait until the push is finished
       for (const auto& v : values) {
@@ -178,8 +178,13 @@ class KVStoreDist : public KVStoreLocal {
           {recv_buf.var()},
           FnProperty::kNormal, priority);
       
-     // std::cout << recv_buf.shape() << ", " << vals[0]->shape() << std::endl;
+     // std::cout << recv_buf.shape() 
+     //           << ", " << vals[0]->shape()
+     //           << ", " << grouped_vals[i].size()
+     //           << ", " << grouped_vals[i][0]->shape()
+     //           << std::endl;
       comm_->Broadcast(key, recv_buf, grouped_vals[i], priority);
+     // std::cout << "cc pull partial pass..." << std::endl;
     }
   }
 

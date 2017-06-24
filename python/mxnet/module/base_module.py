@@ -381,10 +381,13 @@ class BaseModule(object):
                 if monitor is not None:
                     monitor.tic()
                 t_1 = time.time()
-                ndarray.waitall()
+                #ndarray.waitall()
                 t0 = time.time()
                 self.forward_backward(data_batch)
                 t1 = time.time()
+              #  if t1-t0>1.0:
+              #     logging.info('too long...restart...')
+              #     continue
 
                 try:
                    # pre fetch next batch

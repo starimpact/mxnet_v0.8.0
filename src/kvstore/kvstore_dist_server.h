@@ -159,7 +159,13 @@ class KVStoreDistServer {
     if (req_meta.push) {
       size_t ds[] = {(size_t)req_data.lens[0]};
       TShape dshape(ds, ds + 1);
-      TBlob recv_blob((real_t*)req_data.vals.data(), // NOLINT(*)
+      real_t *pdata = (real_t*)req_data.vals.data();
+      if (std::isnan(pdata[0]) || std::isinf(pdata[0])) {
+        std::cout << "server DataHandle, encounter a nan or inf:" << pdata[0] << std::endl;
+        server->Response(req_meta);
+        return;
+      }
+      TBlob recv_blob(pdata, // NOLINT(*)
                       dshape, cpu::kDevMask);
       NDArray recved = NDArray(recv_blob, 0);
       if (stored.is_none()) {
@@ -268,7 +274,13 @@ class KVStoreDistServer {
     // could be deallocated when this function returns. so we need to make sure
     // the operators with \a NDArray are actually finished
     if (req_meta.push) {
-      TBlob recv_blob((real_t*)req_data.vals.data(), // NOLINT(*)
+      real_t *pdata = (real_t*)req_data.vals.data();
+      if (std::isnan(pdata[0]) || std::isinf(pdata[0])) {
+        std::cout << "server DataHandle_Partial, encounter a nan or inf:" << pdata[0] << std::endl;
+        server->Response(req_meta);
+        return;
+      }
+      TBlob recv_blob(pdata, // NOLINT(*)
                       rsv_dshape, cpu::kDevMask);
       NDArray recved = NDArray(recv_blob, 0);
     //  std::cout << "server handle push" << std::endl;

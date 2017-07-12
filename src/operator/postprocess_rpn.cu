@@ -98,14 +98,15 @@ inline void PostProcessRPNForward(const Tensor<gpu, 4> &datacls_in,
 
   int dwBufferPerLen = dwAnchorNum * dwFeatH * dwFeatW;
 
+  Stream<gpu>* bbstream = bb_out.stream_;
   Tensor<gpu, 3, float> tBBBuffer(Shape3(dwBatchNum, dwBufferPerLen, 5));
-  AllocSpace(&tBBBuffer);
+  AllocSpace(&tBBBuffer, false);tBBBuffer.stream_ = bbstream;
   float *pfBBBuffer = tBBBuffer.dptr_;
   int dwBBBufferSize = dwBatchNum * dwBufferPerLen * 5;
   cudaMemset(pfBBBuffer, 0, dwBBBufferSize*sizeof(float));
 
   Tensor<gpu, 2, float> tScores(Shape2(dwBatchNum, dwBufferPerLen));
-  AllocSpace(&tScores);
+  AllocSpace(&tScores, false);tScores.stream_ = bbstream;
   float *pfScores = tScores.dptr_;
   int dwScoreSize = dwBatchNum * dwBufferPerLen;
   cudaMemset(pfScores, 0, dwScoreSize*sizeof(float));
@@ -114,7 +115,7 @@ inline void PostProcessRPNForward(const Tensor<gpu, 4> &datacls_in,
   cudaMemset(bb_out.dptr_, 0, dwBBMemLen*sizeof(float));
 
   Tensor<gpu, 1, int> tCounter(Shape1(dwBatchNum));
-  AllocSpace(&tCounter);
+  AllocSpace(&tCounter, false); tCounter.stream_ = bbstream;
   int *pdwCounter = tCounter.dptr_;
   cudaMemset(pdwCounter, 0, dwBatchNum*sizeof(int));
 
@@ -131,41 +132,44 @@ inline void PostProcessRPNForward(const Tensor<gpu, 4> &datacls_in,
             datacls_in.dptr_, datareg_in.dptr_, 
             anchorinfo_in.dptr_, otherinfo_in.dptr_, dwBatchNum, dwAnchorNum, dwFeatH, dwFeatW, 
             pfBBBuffer, pfScores, dwBufferPerLen, pdwCounter);
+//            bb_out.dptr_, pfScores, bb_maxnum_per_batch, pdwCounter);
 
 #if 1
   {
-    Tensor<cpu, 1, float> tRowScore_(Shape1(dwBufferPerLen));AllocSpace(&tRowScore_);
-    Tensor<cpu, 1, int> tCounter_(Shape1(dwBatchNum));AllocSpace(&tCounter_);
+
+    Tensor<cpu, 1, float> tRowScore_(Shape1(dwBufferPerLen));AllocSpace(&tRowScore_, false);
+    Tensor<cpu, 1, int> tCounter_(Shape1(dwBatchNum));AllocSpace(&tCounter_, false);
     
-    Copy<1, int>(tCounter_, tCounter, bb_out.stream_);
- //   printf("mxnet=>dwCounter:");
+    Copy<1, int>(tCounter_, tCounter, bbstream);
+//    printf("mxnet=>dwCounter[%d, %d]:\n", dwBatchNum, dwBufferPerLen);
     for (int i = 0; i < dwBatchNum; i++)
     {
       Tensor<gpu, 2, float> tRowInfo = tBBBuffer[i];
       Tensor<gpu, 2, float> tRowOut = bb_out[i];
       Tensor<gpu, 1, float> tRowScore = tScores[i];
-      Copy<1, float>(tRowScore_, tRowScore, bb_out.stream_);
+      Copy<1, float>(tRowScore_, tRowScore, bbstream);
       std::vector<int> index(dwBufferPerLen);
       std::iota(index.begin(), index.end(), 0);
       std::sort(index.begin(), index.end(),
                 [&tRowScore_](size_t i0, size_t i1) {return tRowScore_[i0] > tRowScore_[i1];} );
-//      printf("%d:%d, \n", i, tCounter_[i]);
+//      printf("batch_%d:%d, \n", i, tCounter_[i]);
       int minnum = std::min(tCounter_[i], bb_maxnum_per_batch);
       for (int j = 0; j < minnum; j++)
       {
-//        printf("%f:%d, ", tRowScore_[index[j]], index[j]);
-        Copy(tRowOut[j], tRowInfo[index[j]], bb_out.stream_);
+//        if (j < 20) printf("%f:%d, ", tRowScore_[index[j]], index[j]);
+        Copy(tRowOut[j], tRowInfo[index[j]], bbstream);
       }
 //      printf("\n");
+
    }
    FreeSpace(&tRowScore_);
    FreeSpace(&tCounter_);
   }
 #endif
-//  free(pdwCounterHost);
   FreeSpace(&tCounter);
   FreeSpace(&tBBBuffer);
   FreeSpace(&tScores);
+  
 }
   
 } // namespace cuda

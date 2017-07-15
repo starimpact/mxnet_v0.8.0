@@ -5,7 +5,7 @@ namespace mxnet {
 namespace op {
 
 template<>
-Operator* CreateOp(TakeParam param) {
+Operator* CreateOp<cpu>(TakeParam param) {
   return new TakeOp<cpu>(param);
 }
 

@@ -25,7 +25,7 @@ enum TakeOpOutputs {kOut};
 }  //namespace take_
 
 struct TakeParam : public dmlc::Parameter<TakeParam> {
-  
+  DMLC_DECLARE_PARAMETER(TakeParam) {}
 };
 
 template<typename xpu>
@@ -39,7 +39,15 @@ class TakeOp : public Operator {
                        const std::vector<TBlob> &out_data,
                        const std::vector<TBlob> &qux_args) {
     using namespace mshadow;
-    
+    Stream<xpu> *s = ctx.get_stream<xpu>();
+    Tensor<xpu, 2> data = in_data[take_::kData].get<xpu, 2, real_t>(s); 
+    Tensor<xpu, 1> index = in_data[take_::kIndex].get<xpu, 1, real_t>(s);
+    Tensor<xpu, 1> out = out_data[take_::kOut].get<xpu, 1, real_t>(s);
+    Tensor<cpu, 1> index_cpu(Shape1(1));AllocSpace(&index_cpu, false);
+    Copy<1, real_t>(index_cpu, index, s);
+    int idx = static_cast<int>(index_cpu[0]);
+    Copy<1, real_t>(out, data[idx], s);
+    FreeSpace(&index_cpu);
   }
 
   virtual void Backward(const OpContext &ctx,
@@ -49,6 +57,19 @@ class TakeOp : public Operator {
                         const std::vector<OpReqType> &req,
                         const std::vector<TBlob> &in_grad,
                         const std::vector<TBlob> &aux_args) {
+    using namespace mshadow;
+    Stream<xpu> *s = ctx.get_stream<xpu>();
+    Tensor<xpu, 1> index = in_data[take_::kIndex].get<xpu, 1, real_t>(s);
+    Tensor<xpu, 1> grad_out = out_grad[take_::kOut].get<xpu, 1, real_t>(s);
+    Tensor<xpu, 2> grad_in = in_grad[take_::kData].get<xpu, 2, real_t>(s);
+    Tensor<cpu, 1> index_cpu(Shape1(1));AllocSpace(&index_cpu, false);
+    Copy<1, real_t>(index_cpu, index, s);
+    if (req[take_::kOut] == kWriteTo) {
+      grad_in = 0.f;
+    }
+    int idx = static_cast<int>(index_cpu[0]);
+    grad_in[idx] += grad_out;
+    FreeSpace(&index_cpu);
   }
 
  private:
@@ -78,25 +99,37 @@ class TakeProp : public OperatorProperty {
     param_.Init(kwargs);
   }
 
-  std::map<std::string, std::string> GetParam() const override {
+  std::map<std::string, std::string> GetParams() const override {
     return param_.__DICT__();
   }
 
   bool InferShape(std::vector<TShape> *in_shape,
                   std::vector<TShape> *out_shape,
                   std::vector<TShape> *aux_shape) const override {
+    using namespace mshadow;
+    CHECK_EQ(in_shape->size(), 2) << "Take operator must have 2 inputs.";
+    const TShape &dshape = (*in_shape)[take_::kData];
+    const TShape &ishape = (*in_shape)[take_::kIndex];
+    CHECK_EQ(ishape.ndim(), 1) << "index shape must be 1 dimension.";
+    CHECK_EQ(ishape[0], 1) << "index must be a scalar.";
+    TShape oshape(dshape.data()+1, dshape.data()+dshape.ndim());
+    out_shape->clear();
+    out_shape->push_back(oshape);
+
+    return true;
   }
 
   OperatorProperty* Copy() const override {
     TakeProp* sym = new TakeProp();
     sym->param_ = this->param_;
+    return sym;
   }
 
   std::string TypeString() const override {
     return "Take";
   }
 
-  std::vector<int> DeclareBackwardDependencya(
+  std::vector<int> DeclareBackwardDependency(
     const std::vector<int> &out_grad,
     const std::vector<int> &in_data,
     const std::vector<int> &out_data) const override {

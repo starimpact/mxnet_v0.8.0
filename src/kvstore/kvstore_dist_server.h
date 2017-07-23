@@ -291,6 +291,7 @@ class KVStoreDistServer {
         stored = NDArray(rsv_dshape, Context());
         state = NDArray(rsv_dshape, Context());
         CopyFromTo(recved, &stored, 0);
+        state = 0.f;
         server->Response_Partial(req_meta);
         stored.WaitToRead();
       } else if (sync_mode_) {

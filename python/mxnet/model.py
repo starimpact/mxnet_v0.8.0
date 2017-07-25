@@ -75,6 +75,35 @@ def _create_kvstore(kvstore, num_device, arg_params):
 
     return (kv, update_on_kvstore)
 
+def _normalize_for_weight_rowmajor(weightlist, gradlist):
+    for wgt, grad in zip(weightlist, gradlist):
+      logging.info("-----------------------------------")
+      np.set_printoptions(precision=5, suppress=True)
+      start = 20000
+      normw = np.linalg.norm(wgt.asnumpy()[start:], axis=1)
+      normw.sort()
+      logging.info(normw)
+
+#      normg = np.linalg.norm(grad.asnumpy()[start:], axis=1)
+#      normg.sort()
+#      logging.info(normg)
+      #need to consider batch situation.
+      wgtmp = wgt - grad
+      normv = nd.sqrt(nd.sum(wgtmp**2, axis=1))
+      normv = normv.reshape((normv.size, 1))
+
+#      bb = normv.asnumpy().flatten()[start:]
+#      bb.sort()
+#      logging.info(bb)
+
+      normwgt = nd.broadcast_div(wgtmp, normv)
+      grad[:] = wgt - normwgt 
+
+      normg = np.linalg.norm(grad.asnumpy()[start:], axis=1)
+      normg.sort()
+      logging.info(normg)
+
+
 def _initialize_kvstore(kvstore, param_arrays, arg_params, param_names,
                         update_on_kvstore):
     """ Initialize kvstore"""
@@ -131,6 +160,7 @@ def _update_params_on_kvstore_partial(param_arrays, grad_arrays, param_names,
         if grad_list[0] is None:
             continue
         if name in ori_shapes.keys():
+#            _normalize_for_weight_rowmajor(arg_list, grad_list)
             ori_shape = ori_shapes[name]
             ori_index = ori_indexes[name]
             # push partial gradient, priority is negative index

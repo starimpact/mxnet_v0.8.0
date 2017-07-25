@@ -47,7 +47,7 @@ class TakeOp : public Operator {
     Tensor<xpu, 1> out = out_data[take_::kOut].get<xpu, 1, real_t>(s);
     Tensor<cpu, 1> index_cpu(Shape1(1));AllocSpace(&index_cpu, false);
 //    Tensor<cpu, 1> index_cpu = ctx.requested[take_::kTempSpace].get_space<cpu>(Shape1(1), s_cpu);
-    Copy<1, real_t>(index_cpu, index);
+    Copy<1, real_t>(index_cpu, index, s);
     int idx = static_cast<int>(index_cpu[0]);
     Copy<1, real_t>(out, data[idx], s);
     FreeSpace(&index_cpu);
@@ -68,7 +68,7 @@ class TakeOp : public Operator {
     Tensor<xpu, 2> grad_in = in_grad[take_::kData].get<xpu, 2, real_t>(s);
     Tensor<cpu, 1> index_cpu(Shape1(1));AllocSpace(&index_cpu, false);
 //    Tensor<cpu, 1> index_cpu = ctx.requested[take_::kTempSpace].get_space<cpu>(Shape1(1), s_cpu);
-    Copy<1, real_t>(index_cpu, index);
+    Copy<1, real_t>(index_cpu, index, s);
     if (req[take_::kOut] == kWriteTo) {
       grad_in = 0.f;
     }

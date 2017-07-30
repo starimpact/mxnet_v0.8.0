@@ -22,6 +22,7 @@ namespace op {
 namespace take_ {
 enum TakeOpInputs {kData, kIndex};
 enum TakeOpOutputs {kOut};
+enum TakeOpResource {kTempSpace};
 }  //namespace take_
 
 struct TakeParam : public dmlc::Parameter<TakeParam> {
@@ -40,10 +41,12 @@ class TakeOp : public Operator {
                        const std::vector<TBlob> &qux_args) {
     using namespace mshadow;
     Stream<xpu> *s = ctx.get_stream<xpu>();
+//    Stream<cpu> *s_cpu = ctx.get_stream<cpu>();
     Tensor<xpu, 2> data = in_data[take_::kData].get<xpu, 2, real_t>(s); 
     Tensor<xpu, 1> index = in_data[take_::kIndex].get<xpu, 1, real_t>(s);
     Tensor<xpu, 1> out = out_data[take_::kOut].get<xpu, 1, real_t>(s);
     Tensor<cpu, 1> index_cpu(Shape1(1));AllocSpace(&index_cpu, false);
+//    Tensor<cpu, 1> index_cpu = ctx.requested[take_::kTempSpace].get_space<cpu>(Shape1(1), s_cpu);
     Copy<1, real_t>(index_cpu, index, s);
     int idx = static_cast<int>(index_cpu[0]);
     Copy<1, real_t>(out, data[idx], s);
@@ -59,10 +62,12 @@ class TakeOp : public Operator {
                         const std::vector<TBlob> &aux_args) {
     using namespace mshadow;
     Stream<xpu> *s = ctx.get_stream<xpu>();
+//    Stream<cpu> *s_cpu = ctx.get_stream<cpu>();
     Tensor<xpu, 1> index = in_data[take_::kIndex].get<xpu, 1, real_t>(s);
     Tensor<xpu, 1> grad_out = out_grad[take_::kOut].get<xpu, 1, real_t>(s);
     Tensor<xpu, 2> grad_in = in_grad[take_::kData].get<xpu, 2, real_t>(s);
     Tensor<cpu, 1> index_cpu(Shape1(1));AllocSpace(&index_cpu, false);
+//    Tensor<cpu, 1> index_cpu = ctx.requested[take_::kTempSpace].get_space<cpu>(Shape1(1), s_cpu);
     Copy<1, real_t>(index_cpu, index, s);
     if (req[take_::kOut] == kWriteTo) {
       grad_in = 0.f;
@@ -135,6 +140,16 @@ class TakeProp : public OperatorProperty {
     const std::vector<int> &out_data) const override {
     return {out_grad[take_::kOut], in_data[take_::kIndex]};
   }
+
+//  std::vector<ResourceRequest> ForwardResource(
+//      const std::vector<TShape> &in_shape) const override {
+//    return {ResourceRequest::kTempSpace};
+//  }
+//
+//  std::vector<ResourceRequest> BackwardResource(
+//      const std::vector<TShape> &in_shape) const override {
+//    return {ResourceRequest::kTempSpace};
+//  }
 
   Operator* CreateOperator(Context ctx) const override;
  private:

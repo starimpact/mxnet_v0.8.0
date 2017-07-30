@@ -438,7 +438,7 @@ class DataParallelExecutorGroup(object):
                       labels_slice.append(label_my_slice)
                   else:
                       labels_slice.append(label)
-            eval_metric.update(labels_slice, texec.outputs)
+            eval_metric.update(labels_slice, texec.outputs, texec)
 
     def _bind_ith_exec(self, i, data_shapes, label_shapes, shared_group):
         """Internal utility function to bind the i-th executor.

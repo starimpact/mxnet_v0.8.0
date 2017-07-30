@@ -21,7 +21,6 @@ class TakeOneDim0(operator.CustomOp):
         self.assign(out_data[0], req[0], x[idx])
 
     def backward(self, req, out_grad, in_data, out_data, in_grad, aux):
-        in_grad[0][:] = 0
         idx = int(in_data[1].asnumpy()[0])
         self.assign(in_grad[0][idx], req[0], out_grad[0])
 
@@ -46,7 +45,7 @@ class TakeOneDim0_Prop(operator.CustomOpProp):
         return TakeOneDim0()
 
     def declare_backward_dependency(self, out_grad, in_data, out_data):
-        return [in_data[1], out_grad[0]]
+        return [in_data[0], in_data[1], out_grad[0]]
 
 
 

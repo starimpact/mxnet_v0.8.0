@@ -148,7 +148,9 @@ class KVStoreDist : public KVStoreLocal {
         recv_buf = recv_buf0;
       } else if (recv_buf0.shape() != vals[0]->shape()) {
         auto& recv_buf1 = comm_buf1_[key];
+//        VLOG() << "Pull_Partial recv_buf0 shape do not same...";
         if (recv_buf1.is_none()) {
+//           VLOG() << "Pull_Partial recv_buf1 is none...";
           recv_buf1 = NDArray(vals[0]->shape(), pinned_ctx_);
         }
         CHECK(recv_buf1.shape() == vals[0]->shape()) << "Pull_Partial: Shape must be same.";
@@ -340,6 +342,7 @@ class KVStoreDist : public KVStoreLocal {
       } else {
         if (send_buf0.is_none()) {
           send_buf0 = NDArray(merged.shape(), pinned_ctx_);
+          send_buf = send_buf0;
         } else if (send_buf0.shape() != merged.shape()) {
           auto& send_buf1 = comm_buf1_[key];
           if (send_buf1.is_none()) {

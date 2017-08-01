@@ -140,12 +140,23 @@ class KVStoreDist : public KVStoreLocal {
       const Intlist& ori_index = grouped_ori_indexes[i];
       // use the same array for merging to guarantee that pull always happens
       // after the previous push on this key
-      auto& recv_buf = comm_buf_[key];
-      if (recv_buf.is_none()) {
+      NDArray recv_buf;
+      auto& recv_buf0 = comm_buf_[key];
+      if (recv_buf0.is_none()) {
         // it may happen for the first time a no-rank-0 worker pull the weight.
-        recv_buf = NDArray(vals[0]->shape(), pinned_ctx_);
-      } else if (recv_buf.shape() != vals[0]->shape()) {
-        recv_buf = NDArray(vals[0]->shape(), pinned_ctx_);
+        recv_buf0 = NDArray(vals[0]->shape(), pinned_ctx_);
+        recv_buf = recv_buf0;
+      } else if (recv_buf0.shape() != vals[0]->shape()) {
+        auto& recv_buf1 = comm_buf1_[key];
+//        VLOG() << "Pull_Partial recv_buf0 shape do not same...";
+        if (recv_buf1.is_none()) {
+//           VLOG() << "Pull_Partial recv_buf1 is none...";
+          recv_buf1 = NDArray(vals[0]->shape(), pinned_ctx_);
+        }
+        CHECK(recv_buf1.shape() == vals[0]->shape()) << "Pull_Partial: Shape must be same.";
+        recv_buf = recv_buf1;
+      } else {
+        recv_buf = recv_buf0;
       }
       CopyFromTo(*vals[0], &recv_buf); // promise thre are no zeros rows
       real_t* data = static_cast<real_t*>(recv_buf.data().dptr_);
@@ -323,14 +334,24 @@ class KVStoreDist : public KVStoreLocal {
       }
       NDArray merged = do_merge ? comm_->Reduce(key, vals, priority) : vals[0];
 
-      auto& send_buf = comm_buf_[key];
+      NDArray send_buf;
+      auto& send_buf0 = comm_buf_[key];
       if (merged.ctx().dev_mask() == cpu::kDevMask) {
-        send_buf = merged;  // avoid memory copy
+        send_buf0 = merged;  // avoid memory copy
+        send_buf = send_buf0;
       } else {
-        if (send_buf.is_none()) {
-          send_buf = NDArray(merged.shape(), pinned_ctx_);
-        } else if (send_buf.shape() != merged.shape()) {
-          send_buf = NDArray(merged.shape(), pinned_ctx_);
+        if (send_buf0.is_none()) {
+          send_buf0 = NDArray(merged.shape(), pinned_ctx_);
+          send_buf = send_buf0;
+        } else if (send_buf0.shape() != merged.shape()) {
+          auto& send_buf1 = comm_buf1_[key];
+          if (send_buf1.is_none()) {
+            send_buf1 = NDArray(merged.shape(), pinned_ctx_);
+          } 
+          CHECK(send_buf1.shape() == merged.shape()) << "Push_Partial:Shape must be same.";
+          send_buf = send_buf1;
+        } else {
+          send_buf = send_buf0;
         }
         CopyFromTo(merged, &send_buf);
       }
@@ -578,6 +599,7 @@ class KVStoreDist : public KVStoreLocal {
   size_t bigarray_bound_;
   /// \brief send & recver buffer
   std::unordered_map<int, NDArray> comm_buf_;
+  std::unordered_map<int, NDArray> comm_buf1_;
 };
 
 }  // namespace kvstore

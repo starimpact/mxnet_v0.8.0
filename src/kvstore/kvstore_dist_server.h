@@ -177,37 +177,22 @@ class KVStoreDistServer {
       } else if (sync_mode_) {
         // synced push
         auto& merged = merge_buf_[key];
-        if (merged.array.is_none()) {
-          merged.array = NDArray(dshape, Context());
-        }
-
-        if (merged.request.size() == 0) {
-          CopyFromTo(recved, &merged.array, 0);
-        } else {
-          merged.array += recved;
-        }
 
         merged.request.push_back(req_meta);
+
+        exec_.Exec([this, key, &recved, &stored](){
+            CHECK(updater_);
+            updater_(key, recved, &stored);
+          });
+        stored.WaitToRead();
 
         if (merged.request.size() == (size_t)ps::NumWorkers()) {
           // let the main thread to execute updater_, which is necessary for
           // python
-          if (updater_) {
-            exec_.Exec([this, key, &merged, &stored](){
-                CHECK(updater_);
-                updater_(key, merged.array, &stored);
-              });
-          } else {
-            // if no updater, just copy
-            CopyFromTo(merged.array, &stored);
-          }
           for (const auto& req : merged.request) {
             server->Response(req);
           }
           merged.request.clear();
-          stored.WaitToRead();
-        } else {
-          merged.array.WaitToRead();
         }
       } else {
         // async push
@@ -297,40 +282,31 @@ class KVStoreDistServer {
       } else if (sync_mode_) {
         // synced push
         auto& merged = merge_buf_[key];
-        if (merged.array.is_none()) {
-          merged.array = NDArray(store_dshape, Context());
-          merged.array_tmp = NDArray(store_dshape, Context());
-        }
-
-        if (merged.request.size() == 0) {
-          CopyFromTo_IndexTo(recved, &merged.array, ori_index, 0);
-        } else {
-          CopyFromTo_IndexTo(recved, &merged.array_tmp, ori_index, 0);
-          merged.array_tmp.WaitToRead();
-          merged.array += merged.array_tmp;
-        }
 
         merged.request.push_back(req_meta);
 
+        NDArray state_partial(rsv_dshape, Context());
+        NDArray grad_partial(rsv_dshape, Context());
+
+        CopyFromTo_IndexFrom(state, &state_partial, ori_index, 0);
+        CopyFromTo_IndexFrom(stored, &store_partial, ori_index, 0);
+        CopyFromTo(recved, &grad_partial, 0);
+
+        exec_.Exec([this, key, &grad_partial, &ori_index, &store_partial, &state_partial](){
+            CHECK(partial_updater_);
+            partial_updater_(key, grad_partial, &store_partial, &state_partial);
+          });
+        store_partial.WaitToRead();
+        state_partial.WaitToRead();
+
+        CopyFromTo_IndexTo(state_partial, &state, ori_index, 0);
+        CopyFromTo_IndexTo(store_partial, &stored, ori_index, 0);
+
         if (merged.request.size() == (size_t)ps::NumWorkers()) {
-          // let the main thread to execute updater_, which is necessary for
-          // python
-          if (updater_) {
-            exec_.Exec([this, key, &merged, &stored](){
-                CHECK(updater_);
-                updater_(key, merged.array, &stored);
-              });
-          } else {
-            // if no updater, just copy
-            CopyFromTo(merged.array, &stored);
-          }
           for (const auto& req : merged.request) {
             server->Response_Partial(req);
           }
           merged.request.clear();
-          stored.WaitToRead();
-        } else {
-          merged.array.WaitToRead();
         }
       } else {
         // async push

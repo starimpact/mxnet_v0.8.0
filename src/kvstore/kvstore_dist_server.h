@@ -177,37 +177,22 @@ class KVStoreDistServer {
       } else if (sync_mode_) {
         // synced push
         auto& merged = merge_buf_[key];
-        if (merged.array.is_none()) {
-          merged.array = NDArray(dshape, Context());
-        }
-
-        if (merged.request.size() == 0) {
-          CopyFromTo(recved, &merged.array, 0);
-        } else {
-          merged.array += recved;
-        }
 
         merged.request.push_back(req_meta);
+
+        exec_.Exec([this, key, &recved, &stored](){
+            CHECK(updater_);
+            updater_(key, recved, &stored);
+          });
+        stored.WaitToRead();
 
         if (merged.request.size() == (size_t)ps::NumWorkers()) {
           // let the main thread to execute updater_, which is necessary for
           // python
-          if (updater_) {
-            exec_.Exec([this, key, &merged, &stored](){
-                CHECK(updater_);
-                updater_(key, merged.array, &stored);
-              });
-          } else {
-            // if no updater, just copy
-            CopyFromTo(merged.array, &stored);
-          }
           for (const auto& req : merged.request) {
             server->Response(req);
           }
           merged.request.clear();
-          stored.WaitToRead();
-        } else {
-          merged.array.WaitToRead();
         }
       } else {
         // async push
@@ -257,6 +242,9 @@ class KVStoreDistServer {
     int key = DecodeKey(req_data.keys[0]);
     auto& stored = store_[key];
     auto& state = states_[key];
+    auto& stored_buf = store_buffer_[key];
+    auto& state_buf= states_buffer_[key];
+    auto& grad_buf= grad_buffer_[key];
 
    // std::cout << "server, ori_index:" << req_data.ori_index << std::endl;
     std::vector<int> ori_index(req_data.ori_index.begin(), req_data.ori_index.end());
@@ -267,8 +255,6 @@ class KVStoreDistServer {
     rsv_dshape[1] = dim;
     store_dshape[0] = ori_row;
     store_dshape[1] = dim;
-
-    NDArray store_partial(rsv_dshape, Context());
 
     // there used several WaitToRead, this is because \a recved's memory
     // could be deallocated when this function returns. so we need to make sure
@@ -290,6 +276,9 @@ class KVStoreDistServer {
         // for the initialization, rsv_dshape is actually the original weight shape of this server.
         stored = NDArray(rsv_dshape, Context());
         state = NDArray(rsv_dshape, Context());
+        stored_buf = NDArray(rsv_dshape, Context());
+        state_buf = NDArray(rsv_dshape, Context());
+        grad_buf = NDArray(rsv_dshape, Context());
         CopyFromTo(recved, &stored, 0);
         state = 0.f;
         server->Response_Partial(req_meta);
@@ -297,40 +286,32 @@ class KVStoreDistServer {
       } else if (sync_mode_) {
         // synced push
         auto& merged = merge_buf_[key];
-        if (merged.array.is_none()) {
-          merged.array = NDArray(store_dshape, Context());
-          merged.array_tmp = NDArray(store_dshape, Context());
-        }
-
-        if (merged.request.size() == 0) {
-          CopyFromTo_IndexTo(recved, &merged.array, ori_index, 0);
-        } else {
-          CopyFromTo_IndexTo(recved, &merged.array_tmp, ori_index, 0);
-          merged.array_tmp.WaitToRead();
-          merged.array += merged.array_tmp;
-        }
 
         merged.request.push_back(req_meta);
 
+        NDArray store_partial = stored_buf.Slice(0, rsv_dshape[0]);
+        NDArray state_partial = state_buf.Slice(0, rsv_dshape[0]);
+        NDArray grad_partial = grad_buf.Slice(0, rsv_dshape[0]);
+
+        CopyFromTo_IndexFrom(state, &state_partial, ori_index, 0);
+        CopyFromTo_IndexFrom(stored, &store_partial, ori_index, 0);
+        CopyFromTo(recved, &grad_partial, 0);
+
+        exec_.Exec([this, key, &grad_partial, &ori_index, &store_partial, &state_partial](){
+            CHECK(partial_updater_);
+            partial_updater_(key, grad_partial, &store_partial, &state_partial);
+          });
+        store_partial.WaitToRead();
+        state_partial.WaitToRead();
+
+        CopyFromTo_IndexTo(state_partial, &state, ori_index, 0);
+        CopyFromTo_IndexTo(store_partial, &stored, ori_index, 0);
+
         if (merged.request.size() == (size_t)ps::NumWorkers()) {
-          // let the main thread to execute updater_, which is necessary for
-          // python
-          if (updater_) {
-            exec_.Exec([this, key, &merged, &stored](){
-                CHECK(updater_);
-                updater_(key, merged.array, &stored);
-              });
-          } else {
-            // if no updater, just copy
-            CopyFromTo(merged.array, &stored);
-          }
           for (const auto& req : merged.request) {
             server->Response_Partial(req);
           }
           merged.request.clear();
-          stored.WaitToRead();
-        } else {
-          merged.array.WaitToRead();
         }
       } else {
         // async push
@@ -343,8 +324,9 @@ class KVStoreDistServer {
 
         start = clock();
 #endif
-        NDArray state_partial(rsv_dshape, Context());
-        NDArray grad_partial(rsv_dshape, Context());
+        NDArray store_partial = stored_buf.Slice(0, rsv_dshape[0]);
+        NDArray state_partial = state_buf.Slice(0, rsv_dshape[0]);
+        NDArray grad_partial = grad_buf.Slice(0, rsv_dshape[0]);
 
 #if DBG_SHOW_TIME 
         start1 = clock();
@@ -424,6 +406,7 @@ class KVStoreDistServer {
 
       ps::KVPairs_Partial<real_t> response;
       CHECK(!stored.is_none()) << "init " << key << " first";
+      NDArray store_partial = stored_buf.Slice(0, rsv_dshape[0]);
       CopyFromTo_IndexFrom(stored, &store_partial, ori_index, 0);
       store_partial.WaitToRead();
       response.keys = req_data.keys;
@@ -462,6 +445,10 @@ class KVStoreDistServer {
 
   std::unordered_map<int, NDArray> store_;
   std::unordered_map<int, NDArray> states_;
+  std::unordered_map<int, NDArray> store_buffer_;
+  std::unordered_map<int, NDArray> states_buffer_;
+  std::unordered_map<int, NDArray> grad_buffer_;
+
 
   struct MergeBuf {
     std::vector<ps::KVMeta> request;

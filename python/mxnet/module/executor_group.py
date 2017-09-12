@@ -181,6 +181,7 @@ class DataParallelExecutorGroup(object):
         self.label_arrays = None
         self.param_arrays = None
         self.grad_arrays = None
+        self.grad_arrays_mega = None
         self.aux_arrays = None
 
         # calculate workload and bind executors
@@ -251,8 +252,19 @@ class DataParallelExecutorGroup(object):
             self.grad_arrays = [[exec_.grad_arrays[i] for exec_ in self.execs]
                                 for i, name in enumerate(self.arg_names)
                                 if name in self.param_names]
+            grad_mega = []
+            for grads in self.grad_arrays:
+              grad_mega0 = []
+              for grad in grads:
+                if grad is None:
+                  grad_mega0.append(grad)
+                else:
+                  grad_mega0.append(grad.copy())
+              grad_mega.append(grad_mega0)
+            self.grad_arrays_mega = grad_mega
         else:
             self.grad_arrays = None
+            self.grad_arrays_mega = None
 
         data_names = [x[0] for x in data_shapes]
         if self.inputs_need_grad:

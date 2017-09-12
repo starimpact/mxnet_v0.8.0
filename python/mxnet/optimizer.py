@@ -837,14 +837,15 @@ def get_partial_updater(optimizer):
     updater: function
          The clossure of the updater
     """
-  #  import numpy as np
+    #import numpy as np
     def updater(index, grad, weight, state):
         """updater for kvstore"""
         optimizer.update(index, weight, grad, state)
         #normalize partial weight
         if len(weight.shape)==2:
           normv = nd.sqrt(nd.sum(weight**2, axis=1))
-          normv = normv.reshape((normv.size, 1))
+          normv = normv.reshape((normv.size, 1))+10.0e-10
+    #      print "========", np.min(normv.asnumpy())
           weight[:] = nd.broadcast_div(weight, normv)
     #    print '=====', weight.asnumpy().shape, grad.asnumpy().shape, state.asnumpy().shape
     #    print '=====', np.sum(weight.asnumpy(), axis=1)

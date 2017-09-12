@@ -42,7 +42,7 @@ class Module(BaseModule):
         Default `None`, indicating no network parameters are fixed.
     """
     def __init__(self, symbol, data_names=('data',), label_names=('softmax_label',),
-                 logger=logging, context=ctx.cpu(), work_load_list=None, fixed_param_names=None, ori_parames={}, ori_indexes={}):
+                 logger=logging, context=ctx.cpu(), work_load_list=None, fixed_param_names=None, norm_names={}, ori_parames={}, ori_indexes={}):
         super(Module, self).__init__(logger=logger)
 
         if isinstance(context, ctx.Context):
@@ -80,6 +80,7 @@ class Module(BaseModule):
         self._data_shapes = None
         self._label_shapes = None
 
+        self._norm_names = norm_names
         self._ori_shapes = {}
         self._ori_indexes = ori_indexes
         self._ori_parames = ori_parames
@@ -381,10 +382,12 @@ class Module(BaseModule):
         if kvstore:
             # copy initialized local parameters to kvstore
             _initialize_kvstore_partial(kvstore=kvstore,
+                                batch_size=self._data_shapes[0][1][0],
                                 fixed_params=self._fixed_param_names,
                                 param_arrays=self._exec_group.param_arrays,
                                 arg_params=self._arg_params,
                                 param_names=self._param_names,
+                                norm_names=self._norm_names,
                                 ori_params=self._ori_parames,
                                 ori_shapes=self._ori_shapes,
                                 ori_indexes=self._ori_indexes,
@@ -444,9 +447,11 @@ class Module(BaseModule):
 
         self._params_dirty = True
         if self._update_on_kvstore:
-            _update_params_on_kvstore_partial(self._exec_group.param_arrays,
+            _update_params_on_kvstore_partial(self._data_shapes[0][1][0],
+                                      self._exec_group.param_arrays,
                                       self._exec_group.grad_arrays,
                                       self._param_names,
+                                      self._norm_names,
                                       self._ori_shapes,
                                       self._ori_indexes,
                                       self._kvstore)
@@ -456,6 +461,48 @@ class Module(BaseModule):
                            updater=self._updater,
                            num_device=len(self._context),
                            kvstore=self._kvstore)
+
+    def update_mega(self, nbatch, megabatch):
+        """Update parameters according to the installed optimizer and the gradients computed
+        in the previous forward-backward batch.
+        """
+        assert self.binded and self.params_initialized and self.optimizer_initialized
+
+        for mgrads, grads in zip(self._exec_group.grad_arrays_mega, self._exec_group.grad_arrays):
+          for mgrad, grad in zip(mgrads, grads):
+            if mgrad is not None:
+              mgrad += grad
+
+        if nbatch % megabatch != 0:
+          return
+
+        for mgrads in self._exec_group.grad_arrays_mega:
+          for mgrad in mgrads:
+            if mgrad is not None:
+              mgrad /= megabatch
+    
+        self._params_dirty = True
+        if self._update_on_kvstore:
+            #logging.info("update_mega:%d, %d", nbatch, megabatch)
+            _update_params_on_kvstore_partial(self._data_shapes[0][1][0],
+                                      self._exec_group.param_arrays,
+                                      self._exec_group.grad_arrays_mega,
+                                      self._param_names,
+                                      self._norm_names,
+                                      self._ori_shapes,
+                                      self._ori_indexes,
+                                      self._kvstore)
+        else:
+            _update_params(self._exec_group.param_arrays,
+                           self._exec_group.grad_arrays_mega,
+                           updater=self._updater,
+                           num_device=len(self._context),
+                           kvstore=self._kvstore)
+
+        for mgrads in self._exec_group.grad_arrays_mega:
+          for mgrad in mgrads:
+            if mgrad is not None:
+              mgrad[:] = 0.0 
 
     def get_outputs(self, merge_multi_context=True):
         """Get outputs of the previous forward computation.

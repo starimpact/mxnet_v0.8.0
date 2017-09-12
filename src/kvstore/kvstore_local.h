@@ -59,7 +59,6 @@ class KVStoreLocal : public KVStore {
           << "duplicate init of key " << keys[i];
       local_[keys[i]] = values[i].Copy(pinned_ctx_);
       local_partial_[keys[i]] = NDArray(ori_shapes[i], pinned_ctx_);
-      CopyFromTo_IndexFrom(local_[keys[i]], &local_partial_[keys[i]], ori_indexes[i]);
 
       states_[keys[i]] = NDArray(values[i].shape(), pinned_ctx_);
       states_partial_[keys[i]] = NDArray(ori_shapes[i], pinned_ctx_);
@@ -94,16 +93,17 @@ class KVStoreLocal : public KVStore {
         if (merged.ctx().dev_mask() != cpu::kDevMask &&
             local_partial.ctx().dev_mask() == cpu::kDevMask) {
           local_partial = local_partial.Copy(merged.ctx());
+          state_partial = state_partial.Copy(merged.ctx());
         }
-        CopyFromTo_IndexFrom(local, &local_partial, ori_index);
-        CopyFromTo_IndexFrom(state, &state_partial, ori_index);
+        CopyFromTo_IndexFrom(local, &local_partial, ori_index, 0);
+        CopyFromTo_IndexFrom(state, &state_partial, ori_index, 0);
 
         partial_updater_(key, merged, &local_partial, &state_partial);
 
-        CopyFromTo_IndexTo(local_partial, &local, ori_index);
-        CopyFromTo_IndexTo(state_partial, &state, ori_index);
+        CopyFromTo_IndexTo(local_partial, &local, ori_index, 0);
+        CopyFromTo_IndexTo(state_partial, &state, ori_index, 0);
       } else {
-        CopyFromTo_IndexTo(merged, &local, ori_index);
+        CopyFromTo_IndexTo(merged, &local, ori_index, 0);
       }
     }
   }
@@ -149,10 +149,16 @@ class KVStoreLocal : public KVStore {
       int key = uniq_keys[i];
       const Intlist& ori_index = grouped_ori_indexes[i];
       const NDArray& local = local_[key];
-      NDArray& local_partial = local_partial_[key];
-      CopyFromTo_IndexFrom(local, &local_partial, ori_index);
       CHECK(!local.is_none()) << "key " << key << " has not been inited";
-      comm_->Broadcast(key, local_partial, grouped_vals[i], priority);
+      NDArray& local_partial = local_partial_[key];
+      if (local_partial.shape()[0] == ori_index.size()) {
+        CopyFromTo_IndexFrom(local, &local_partial, ori_index, 0);
+        comm_->Broadcast(key, local_partial, grouped_vals[i], priority);
+      } else if (local.shape()[0] == ori_index.size()) {
+        comm_->Broadcast(key, local, grouped_vals[i], priority);
+      } else {
+        LG << "error: ori_index is wrong!\n";
+      }
     }
   }
 

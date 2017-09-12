@@ -292,7 +292,7 @@ class BaseModule(object):
             eval_batch_end_callback=None, initializer=Uniform(0.01),
             arg_params=None, aux_params=None, allow_missing=False,
             force_rebind=False, force_init=False, begin_epoch=0, num_epoch=None,
-            validation_metric=None, monitor=None):
+            validation_metric=None, monitor=None, megabatch=1):
         """Train the module parameters.
 
         Parameters
@@ -396,7 +396,10 @@ class BaseModule(object):
                    end_of_batch = True
 
                 t2 = time.time()
-                self.update()
+                if megabatch==1:
+                  self.update()
+                else:
+                  self.update_mega(nbatch+1, megabatch)
                 t3 = time.time()
                 self.update_metric(eval_metric, data_batch.label)
                 t4 = time.time()
@@ -636,6 +639,12 @@ class BaseModule(object):
         raise NotImplementedError()
 
     def update(self):
+        """Update parameters according to the installed optimizer and the gradients computed
+        in the previous forward-backward batch.
+        """
+        raise NotImplementedError()
+
+    def update_mega(self, nbatch, megabatch):
         """Update parameters according to the installed optimizer and the gradients computed
         in the previous forward-backward batch.
         """

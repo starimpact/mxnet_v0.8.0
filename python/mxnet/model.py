@@ -103,6 +103,30 @@ def _normalize_for_weight_rowmajor(weightlist, gradlist):
       normg.sort()
       logging.info(normg)
 
+def _normalize_weight_wholemajor(batch_size, weightlist):
+    #0.1 for each one , the norm is sqrt(0.01*size)
+    for wgt in weightlist:
+      normv = nd.sqrt(nd.sum((wgt/batch_size)**2))
+      normwgt = wgt/normv
+      wgt[:] = normwgt*batch_size*np.sqrt(0.01*wgt.size)
+
+def _normalize_weight_rowmajor(batch_size, weightlist):
+    for wgt in weightlist:
+      assert(len(wgt.shape)==2)
+      normv = nd.sqrt(nd.sum((wgt/batch_size)**2, axis=1))
+      normv = normv.reshape((normv.size, 1))
+      normwgt = nd.broadcast_div(wgt, normv)
+      wgt[:] = normwgt*batch_size
+
+#      normg = np.linalg.norm(wgt.asnumpy(), axis=0)
+#      normg.sort()
+#      logging.info(normg)
+ 
+def _normalize_weight(batch_size, weightlist, ntype):
+    if ntype=='row':
+        _normalize_weight_rowmajor(batch_size, weightlist)
+    elif ntype=='whole':
+        _normalize_weight_wholemajor(batch_size, weightlist)
 
 def _initialize_kvstore(kvstore, param_arrays, arg_params, param_names,
                         update_on_kvstore):
@@ -113,8 +137,8 @@ def _initialize_kvstore(kvstore, param_arrays, arg_params, param_names,
         if update_on_kvstore:
             kvstore.pull(idx, param_on_devs, priority=-idx)
 
-def _initialize_kvstore_partial(kvstore, fixed_params, param_arrays, arg_params, param_names,
-                                ori_params, ori_shapes, ori_indexes,
+def _initialize_kvstore_partial(kvstore, batch_size, fixed_params, param_arrays, arg_params, param_names,
+                                norm_names, ori_params, ori_shapes, ori_indexes,
                                 update_on_kvstore):
     """ Initialize kvstore"""
     logging.info('start to init kvstore ...') 
@@ -126,9 +150,16 @@ def _initialize_kvstore_partial(kvstore, fixed_params, param_arrays, arg_params,
       #      continue
         if name in ori_shapes.keys():
             ori_indextmp = np.asarray(range(ori_params[name].shape[0]), dtype=np.int32)
+            if name in norm_names.keys():
+                _normalize_weight(1, [ori_params[name]], norm_names[name])
+
             kvstore.init_partial(idx, ori_params[name], arg_params[name].shape, ori_indextmp)
             kvstore.pull_partial(idx, param_on_devs, ori_shapes[name], ori_indexes[name], priority=-idx)
             continue
+
+        if name in norm_names:
+            _normalize_weight(1, [arg_params[name]], norm_names[name])
+
         kvstore.init(idx, arg_params[name])
 
         if update_on_kvstore:
@@ -149,7 +180,7 @@ def _update_params_on_kvstore(param_arrays, grad_arrays, kvstore):
         # pull back the weights
         kvstore.pull(index, arg_list, priority=-index)
 
-def _update_params_on_kvstore_partial(param_arrays, grad_arrays, param_names,
+def _update_params_on_kvstore_partial(batch_size, param_arrays, grad_arrays, param_names, norm_names,
                                       ori_shapes, ori_indexes, kvstore):
     """ Perform update of param_arrays from grad_arrays on kvstore."""
 #    print "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
@@ -159,6 +190,9 @@ def _update_params_on_kvstore_partial(param_arrays, grad_arrays, param_names,
         arg_list, grad_list = pair
         if grad_list[0] is None:
             continue
+#        if name in norm_names.keys():
+#            _normalize_weight(batch_size, grad_list, norm_names[name])
+
         if name in ori_shapes.keys():
 #            _normalize_for_weight_rowmajor(arg_list, grad_list)
             ori_shape = ori_shapes[name]
@@ -167,6 +201,9 @@ def _update_params_on_kvstore_partial(param_arrays, grad_arrays, param_names,
             kvstore.push_partial(index, grad_list, ori_shape, ori_index, priority=-index)
             # pull back the partial weights
             kvstore.pull_partial(index, arg_list, ori_shape, ori_index, priority=-index)
+#            if name in norm_names.keys():
+#                _normalize_weight(1, arg_list, norm_names[name])
+
 #            npval = grad_list[0].asnumpy()
 #            sumval = np.sum(npval, axis=1)
 #            print 'push grad, !=0:', np.sum(sumval!=0), ', ==0:', np.sum(sumval==0)
@@ -182,6 +219,9 @@ def _update_params_on_kvstore_partial(param_arrays, grad_arrays, param_names,
         kvstore.push(index, grad_list, priority=-index)
         # pull back the weights
         kvstore.pull(index, arg_list, priority=-index)
+        if name in norm_names.keys():
+            _normalize_weight(1, arg_list, norm_names[name])
+
 
 def _pull_params_on_kvstore_partial(param_arrays, param_names,
                                     ori_shapes, ori_indexes, kvstore):

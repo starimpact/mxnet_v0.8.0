@@ -141,7 +141,7 @@ USE_S3 = 0
 #----------------------------
 
 # path to folders containing projects specific operators that you don't want to put in src/operators
-EXTRA_OPERATORS =
+EXTRA_OPERATORS = extra-op
 
 
 #----------------------------

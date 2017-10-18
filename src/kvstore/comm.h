@@ -216,25 +216,33 @@ class CommDevice : public Comm {
 
     auto& buf = merge_buf_[key];
     std::vector<NDArray> reduce(src.size());
+    //std::cout << "hi, elementsum..." << src[0].shape() << buf.merged.shape() << std::endl;
     CopyFromTo(src[0], &(buf.merged), priority);
     reduce[0] = buf.merged;
 
-    if (buf.copy_buf.empty()) {
+    size_t ori_size = buf.copy_buf.size();
+    //if (buf.copy_buf.empty()) {
+    if (ori_size < src.size()-1) {
       // TODO(mli) this results in large device memory usage for huge ndarray,
       // such as the largest fullc in VGG. consider to do segment reduce with
       // NDArray.Slice or gpu direct memory access. for the latter, we need to
       // remove some ctx check, and also it reduces 20% perf
       buf.copy_buf.resize(src.size()-1);
-      for (size_t i = 0; i < src.size()-1; ++i) {
+      for (size_t i = ori_size; i < src.size()-1; ++i) {
         buf.copy_buf[i] = NDArray(buf.merged.shape(), buf.merged.ctx());
       }
     }
+    //std::cout << "hi, elementsum..." << src.size() << std::endl;
     for (size_t i = 0; i < src.size()-1; ++i) {
+      //std::cout << "hi, elementsum:" << i << ">>>" << src[i+1].shape() << buf.copy_buf[i].shape() << std::endl;
       CopyFromTo(src[i+1], &(buf.copy_buf[i]), priority);
       reduce[i+1] = buf.copy_buf[i];
+      //std::cout << "hi, elementsum:" << i << "<<<\n";
     }
 
+    //std::cout << "hi, elementsum...0\n";
     ElementwiseSum(reduce, &buf.merged);
+//    std::cout << "hi, elementsum...1\n";
 
     return buf.merged;
   }

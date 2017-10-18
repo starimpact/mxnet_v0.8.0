@@ -303,7 +303,9 @@ class SGD(Optimizer):
         if state:
             mom = state
             mom[:] *= self.momentum
-            mom[:] += -lr * (grad + wd * weight)
+            grad += wd * weight
+            grad *= -lr
+            mom[:] += grad 
             weight[:] += mom
         else:
             assert self.momentum == 0.0
@@ -842,7 +844,7 @@ def get_partial_updater(optimizer):
         """updater for kvstore"""
         optimizer.update(index, weight, grad, state)
         #normalize partial weight
-        if len(weight.shape)==2:
+        if False and len(weight.shape)==2:
           normv = nd.sqrt(nd.sum(weight**2, axis=1))
           normv = normv.reshape((normv.size, 1))+10.0e-10
     #      print "========", np.min(normv.asnumpy())

@@ -169,19 +169,23 @@ def _initialize_kvstore_partial(kvstore, batch_size, fixed_params, param_arrays,
     logging.info('init kvstore time:%f ms', (t1-t0)*1000) 
     #exit()
 
-def _update_params_on_kvstore(param_arrays, grad_arrays, kvstore):
+def _update_params_on_kvstore(param_arrays, grad_arrays, kvstore, lock):
     """ Perform update of param_arrays from grad_arrays on kvstore."""
     for index, pair in enumerate(zip(param_arrays, grad_arrays)):
         arg_list, grad_list = pair
         if grad_list[0] is None:
             continue
+        if lock is not None:
+           lock.acquire()
         # push gradient, priority is negative index
         kvstore.push(index, grad_list, priority=-index)
         # pull back the weights
         kvstore.pull(index, arg_list, priority=-index)
+        if lock is not None:
+           lock.release()
 
 def _update_params_on_kvstore_partial(batch_size, param_arrays, grad_arrays, param_names, norm_names,
-                                      ori_shapes, ori_indexes, kvstore):
+                                      ori_shapes, ori_indexes, kvstore, lock):
     """ Perform update of param_arrays from grad_arrays on kvstore."""
 #    print "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
     assert (len(ori_shapes) == len(ori_indexes))
@@ -192,7 +196,8 @@ def _update_params_on_kvstore_partial(batch_size, param_arrays, grad_arrays, par
             continue
 #        if name in norm_names.keys():
 #            _normalize_weight(batch_size, grad_list, norm_names[name])
-
+        if lock is not None:
+           lock.acquire()
         if name in ori_shapes.keys():
 #            _normalize_for_weight_rowmajor(arg_list, grad_list)
             ori_shape = ori_shapes[name]
@@ -201,57 +206,100 @@ def _update_params_on_kvstore_partial(batch_size, param_arrays, grad_arrays, par
             kvstore.push_partial(index, grad_list, ori_shape, ori_index, priority=-index)
             # pull back the partial weights
             kvstore.pull_partial(index, arg_list, ori_shape, ori_index, priority=-index)
-#            if name in norm_names.keys():
-#                _normalize_weight(1, arg_list, norm_names[name])
 
-#            npval = grad_list[0].asnumpy()
-#            sumval = np.sum(npval, axis=1)
-#            print 'push grad, !=0:', np.sum(sumval!=0), ', ==0:', np.sum(sumval==0)
-#            print npval
-#            npval = arg_list[0].asnumpy()
-#            sumval = np.sum(npval, axis=1)
-#            print 'pull weight, !=0:', np.sum(sumval!=0), ', ==0:', np.sum(sumval==0)
-#            print npval
-#            if np.sum(sumval==0) > 0:
-#              raise ValueError
+            if lock is not None:
+              lock.release()
             continue
         # push gradient, priority is negative index
+        # logging.info("%d,%d:%s", index, len(grad_list), str(grad_list[0].shape)) 
         kvstore.push(index, grad_list, priority=-index)
         # pull back the weights
         kvstore.pull(index, arg_list, priority=-index)
         if name in norm_names.keys():
             _normalize_weight(1, arg_list, norm_names[name])
+        if lock is not None:
+           lock.release()
 
+def _update_params_on_kvstore_partial_pullgradless(batch_size, param_arrays, grad_arrays, param_names, pull_names,
+                                      ori_shapes, ori_indexes, kvstore, lock):
+    """ Perform update of param_arrays from grad_arrays on kvstore."""
+#    print "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    assert (len(ori_shapes) == len(ori_indexes))
+    for index, pair in enumerate(zip(param_arrays, grad_arrays)):
+        name = param_names[index]
+        arg_list, grad_list = pair
+        if lock is not None:
+           lock.acquire()
+        if grad_list[0] is None:
+           if name in pull_names:
+             if name in ori_shapes.keys():
+               ori_shape = ori_shapes[name]
+               ori_index = ori_indexes[name]
+               kvstore.pull_partial(index, arg_list, ori_shape, ori_index, priority=-index)
+             else:
+               kvstore.pull(index, arg_list, priority=-index)
+           if lock is not None:
+             lock.release()
+           continue
+
+        if name in ori_shapes.keys():
+            ori_shape = ori_shapes[name]
+            ori_index = ori_indexes[name]
+            # push partial gradient, priority is negative index
+            kvstore.push_partial(index, grad_list, ori_shape, ori_index, priority=-index)
+            # pull back the partial weights
+            kvstore.pull_partial(index, arg_list, ori_shape, ori_index, priority=-index)
+
+            if lock is not None:
+              lock.release()
+            continue
+        # push gradient, priority is negative index
+        kvstore.push(index, grad_list, priority=-index)
+        # pull back the weights
+        kvstore.pull(index, arg_list, priority=-index)
+        if lock is not None:
+           lock.release()
 
 def _pull_params_on_kvstore_partial(param_arrays, param_names,
-                                    ori_shapes, ori_indexes, kvstore):
+                                    ori_shapes, ori_indexes, kvstore, lock):
     """ Perform pull of param_arrays kvstore."""
     assert (len(ori_shapes) == len(ori_indexes))
     for index, arg_list in enumerate(param_arrays):
+        if lock is not None:
+          lock.acquire()
         name = param_names[index]
         if name in ori_shapes.keys():
             ori_shape = ori_shapes[name]
             ori_index = ori_indexes[name]
             # pull back the partial weights
             kvstore.pull_partial(index, arg_list, ori_shape, ori_index, priority=-index)
+            if lock is not None:
+              lock.release()
             continue
         # pull back the weights
         kvstore.pull(index, arg_list, priority=-index)
+        if lock is not None:
+           lock.release()
 
 
-def _pull_ori_params_on_kvstore_partial(ori_params, param_names, kvstore):
+def _pull_ori_params_on_kvstore_partial(ori_params, param_names, kvstore, lock):
     """ Perform pull of param_arrays kvstore."""
     for index in xrange(len(param_names)):
         name = param_names[index]
         if name in ori_params.keys():
+            if lock is not None:
+              lock.acquire()
             ori_shape = ori_params[name].shape
             ori_index = np.asarray(range(ori_shape[0]), dtype=np.int32)
             # pull back the partial weights
             kvstore.pull_partial(index, ori_params[name], ori_shape, ori_index, priority=-index)
+            if lock is not None:
+              lock.release()
+
 
 
 def _update_params(param_arrays, grad_arrays, updater, num_device,
-                   kvstore=None):
+                   kvstore=None, lock=None):
     """ Perform update of param_arrays from grad_arrays not on kvstore."""
     for index, pair in enumerate(zip(param_arrays, grad_arrays)):
         arg_list, grad_list = pair

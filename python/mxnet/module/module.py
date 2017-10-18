@@ -11,7 +11,7 @@ from .. import optimizer as opt
 
 from .executor_group import DataParallelExecutorGroup
 from ..model import _create_kvstore, _initialize_kvstore, _update_params, _update_params_on_kvstore
-from ..model import _initialize_kvstore_partial, _update_params_on_kvstore_partial
+from ..model import _initialize_kvstore_partial, _update_params_on_kvstore_partial, _update_params_on_kvstore_partial_pullgradless
 from ..model import _pull_params_on_kvstore_partial
 from ..model import _pull_ori_params_on_kvstore_partial
 from ..initializer import Uniform
@@ -41,8 +41,8 @@ class Module(BaseModule):
     fixed_param_names: list of str
         Default `None`, indicating no network parameters are fixed.
     """
-    def __init__(self, symbol, data_names=('data',), label_names=('softmax_label',),
-                 logger=logging, context=ctx.cpu(), work_load_list=None, fixed_param_names=None, norm_names={}, ori_parames={}, ori_indexes={}):
+    def __init__(self, symbol, lock=None, data_names=('data',), label_names=('softmax_label',),
+                 logger=logging, context=ctx.cpu(), work_load_list=None, fixed_param_names=None, pull_namesgradless=[], norm_names={}, ori_parames={}, ori_indexes={}):
         super(Module, self).__init__(logger=logger)
 
         if isinstance(context, ctx.Context):
@@ -54,6 +54,7 @@ class Module(BaseModule):
         self._work_load_list = work_load_list
 
         self._symbol = symbol
+        self._lock = lock
 
         data_names = list(data_names)
         label_names = list(label_names) if label_names is not None else []
@@ -80,6 +81,10 @@ class Module(BaseModule):
         self._data_shapes = None
         self._label_shapes = None
 
+        self._pull_namesgradless = pull_namesgradless
+        for name in pull_namesgradless:
+          assert name in arg_names, '%s is not in arg_names...'%name
+            
         self._norm_names = norm_names
         self._ori_shapes = {}
         self._ori_indexes = ori_indexes
@@ -150,12 +155,14 @@ class Module(BaseModule):
                                       self._param_names,
                                       self._ori_shapes,
                                       self._ori_indexes,
-                                      self._kvstore)
+                                      self._kvstore,
+                                      self._lock)
 
     def pull_ori_params(self):
         _pull_ori_params_on_kvstore_partial(self._ori_parames, 
                                             self._param_names, 
-                                            self._kvstore)
+                                            self._kvstore,
+                                            self._lock)
 
     def get_params(self):
         """Get current parameters.
@@ -454,13 +461,36 @@ class Module(BaseModule):
                                       self._norm_names,
                                       self._ori_shapes,
                                       self._ori_indexes,
-                                      self._kvstore)
+                                      self._kvstore,
+                                      self._lock)
         else:
             _update_params(self._exec_group.param_arrays,
                            self._exec_group.grad_arrays,
                            updater=self._updater,
                            num_device=len(self._context),
-                           kvstore=self._kvstore)
+                           kvstore=self._kvstore,
+                           lock=self._lock)
+
+    def update_pullgradless(self):
+        """Update parameters according to the installed optimizer and the gradients computed
+        in the previous forward-backward batch.
+        """
+        assert self.binded and self.params_initialized and self.optimizer_initialized
+
+        self._params_dirty = True
+        if self._update_on_kvstore:
+            _update_params_on_kvstore_partial_pullgradless(self._data_shapes[0][1][0],
+                                      self._exec_group.param_arrays,
+                                      self._exec_group.grad_arrays,
+                                      self._param_names,
+                                      self._pull_namesgradless,
+                                      self._ori_shapes,
+                                      self._ori_indexes,
+                                      self._kvstore,
+                                      self._lock)
+        else:
+           raise Exception('>>>>>>>> Can only update with kvstore...') 
+
 
     def update_mega(self, nbatch, megabatch):
         """Update parameters according to the installed optimizer and the gradients computed
@@ -483,7 +513,7 @@ class Module(BaseModule):
     
         self._params_dirty = True
         if self._update_on_kvstore:
-            #logging.info("update_mega:%d, %d", nbatch, megabatch)
+            logging.info(">>>>>>>>update_mega:%d, %d", nbatch, megabatch)
             _update_params_on_kvstore_partial(self._data_shapes[0][1][0],
                                       self._exec_group.param_arrays,
                                       self._exec_group.grad_arrays_mega,
@@ -491,13 +521,15 @@ class Module(BaseModule):
                                       self._norm_names,
                                       self._ori_shapes,
                                       self._ori_indexes,
-                                      self._kvstore)
+                                      self._kvstore,
+                                      self._lock)
         else:
             _update_params(self._exec_group.param_arrays,
                            self._exec_group.grad_arrays_mega,
                            updater=self._updater,
                            num_device=len(self._context),
-                           kvstore=self._kvstore)
+                           kvstore=self._kvstore,
+                           lock=self._lock)
 
         for mgrads in self._exec_group.grad_arrays_mega:
           for mgrad in mgrads:

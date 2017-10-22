@@ -51,6 +51,8 @@ void CopyFromTo_IndexTo(const NDArray& ndfrom, NDArray *ndto, const std::vector<
   for (std::size_t idx = 0; idx < shapefrom[0]; idx++) {
     int idxto = indexto[idx];
     if (idxto < 0) continue;
+//    if (idx >= ndfrom.shape()[0] || idxto >= ndto->shape()[0])
+//      std::cout << "1:" << ndfrom.shape() << idx << ";" << ndto->shape() << idxto << "\n";
     NDArray from = ndfrom.At(idx);
     NDArray to = ndto->At(idxto);
     CopyFromTo(from, &to, priority);
@@ -64,6 +66,8 @@ void CopyFromTo_IndexFrom(const NDArray& ndfrom, NDArray *ndto, const std::vecto
   for (std::size_t idx = 0; idx < shapeto[0]; idx++) {
     int idxfrom = indexfrom[idx];
     if (idxfrom < 0) continue;
+//    if (idxfrom >= ndfrom.shape()[0] || idx >= ndto->shape()[0])
+//      std::cout << "2:" << ndfrom.shape() << idxfrom << ";" << ndto->shape() << idx << "\n";
     NDArray from = ndfrom.At(idxfrom);
     NDArray to = ndto->At(idx);
     CopyFromTo(from, &to, priority);

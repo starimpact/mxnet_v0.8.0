@@ -215,10 +215,23 @@ class CommDevice : public Comm {
     }
 
     auto& buf = merge_buf_[key];
+    size_t src_rowsnum = src[0].shape()[0];
+
+    if (src_rowsnum > buf.merged.shape()[0]) {
+      buf.merged = NDArray(src[0].shape(), buf.merged.ctx());
+      if (!buf.copy_buf.empty()) {
+        for (size_t i = 0; i < buf.copy_buf.size(); i++) {
+          buf.copy_buf[i] = NDArray(buf.merged.shape(), buf.merged.ctx());
+        }
+      }
+    }
+    CHECK_LE(src_rowsnum, buf.merged.shape()[0]) << "src shape_0_" << src[0].shape() << " size must be LE merged_shape0_" << buf.merged.shape();
+    buf.mergedtmp = buf.merged.Slice(0, src_rowsnum);
+
     std::vector<NDArray> reduce(src.size());
     //std::cout << "hi, elementsum..." << src[0].shape() << buf.merged.shape() << std::endl;
-    CopyFromTo(src[0], &(buf.merged), priority);
-    reduce[0] = buf.merged;
+    CopyFromTo(src[0], &(buf.mergedtmp), priority);
+    reduce[0] = buf.mergedtmp;
 
     size_t ori_size = buf.copy_buf.size();
     //if (buf.copy_buf.empty()) {
@@ -229,22 +242,23 @@ class CommDevice : public Comm {
       // remove some ctx check, and also it reduces 20% perf
       buf.copy_buf.resize(src.size()-1);
       for (size_t i = ori_size; i < src.size()-1; ++i) {
-        buf.copy_buf[i] = NDArray(buf.merged.shape(), buf.merged.ctx());
+        buf.copy_buf[i] = NDArray(buf.mergedtmp.shape(), buf.mergedtmp.ctx());
       }
     }
     //std::cout << "hi, elementsum..." << src.size() << std::endl;
     for (size_t i = 0; i < src.size()-1; ++i) {
       //std::cout << "hi, elementsum:" << i << ">>>" << src[i+1].shape() << buf.copy_buf[i].shape() << std::endl;
-      CopyFromTo(src[i+1], &(buf.copy_buf[i]), priority);
-      reduce[i+1] = buf.copy_buf[i];
+      NDArray copy_buftmp = buf.copy_buf[i].Slice(0, src_rowsnum);
+      CopyFromTo(src[i+1], &copy_buftmp, priority);
+      reduce[i+1] = copy_buftmp;
       //std::cout << "hi, elementsum:" << i << "<<<\n";
     }
 
     //std::cout << "hi, elementsum...0\n";
-    ElementwiseSum(reduce, &buf.merged);
+    ElementwiseSum(reduce, &buf.mergedtmp);
 //    std::cout << "hi, elementsum...1\n";
 
-    return buf.merged;
+    return buf.mergedtmp;
   }
 
   void Broadcast(int key, const NDArray& src,
@@ -353,6 +367,7 @@ class CommDevice : public Comm {
   struct BufferEntry {
     /// \brief the merged value
     NDArray merged;
+    NDArray mergedtmp;
     /// \brief the gpu buffer
     std::vector<NDArray> copy_buf;
   };

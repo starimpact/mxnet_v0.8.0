@@ -146,17 +146,12 @@ class KVStoreDist : public KVStoreLocal {
         // it may happen for the first time a no-rank-0 worker pull the weight.
         recv_buf0 = NDArray(vals[0]->shape(), pinned_ctx_);
         recv_buf = recv_buf0;
-      } else if (recv_buf0.shape() != vals[0]->shape()) {
-        auto& recv_buf1 = comm_buf1_[key];
-//        VLOG() << "Pull_Partial recv_buf0 shape do not same...";
-        if (recv_buf1.is_none()) {
-//           VLOG() << "Pull_Partial recv_buf1 is none...";
-          recv_buf1 = NDArray(vals[0]->shape(), pinned_ctx_);
+      }  else {
+        if (vals[0]->shape()[0] > recv_buf0.shape()[0]) {
+          recv_buf0 = NDArray(vals[0]->shape(), pinned_ctx_);
         }
-        CHECK(recv_buf1.shape() == vals[0]->shape()) << "Pull_Partial: Shape must be same.";
-        recv_buf = recv_buf1;
-      } else {
-        recv_buf = recv_buf0;
+        CHECK(recv_buf0.shape()[0] >= vals[0]->shape()[0]) << "Pull_Partial: vals shape_0 must be LE than recv_buf0.";
+        recv_buf = recv_buf0.Slice(0, vals[0]->shape()[0]);
       }
       CopyFromTo(*vals[0], &recv_buf); // promise thre are no zeros rows
       real_t* data = static_cast<real_t*>(recv_buf.data().dptr_);
@@ -343,15 +338,12 @@ class KVStoreDist : public KVStoreLocal {
         if (send_buf0.is_none()) {
           send_buf0 = NDArray(merged.shape(), pinned_ctx_);
           send_buf = send_buf0;
-        } else if (send_buf0.shape() != merged.shape()) {
-          auto& send_buf1 = comm_buf1_[key];
-          if (send_buf1.is_none()) {
-            send_buf1 = NDArray(merged.shape(), pinned_ctx_);
-          } 
-          CHECK(send_buf1.shape() == merged.shape()) << "Push_Partial:Shape must be same.";
-          send_buf = send_buf1;
-        } else {
-          send_buf = send_buf0;
+        }  else {
+          if (merged.shape()[0] > send_buf0.shape()[0]) {
+            send_buf0 = NDArray(merged.shape(), pinned_ctx_);
+          }
+          CHECK(send_buf0.shape()[0] >= merged.shape()[0]) << "Push_Partial:merge Shape_0 must be LE than send_buf0 shape_0.";
+          send_buf = send_buf0.Slice(0, merged.shape()[0]);
         }
         CopyFromTo(merged, &send_buf);
       }
@@ -541,7 +533,7 @@ class KVStoreDist : public KVStoreLocal {
       pskv.size += realstart * dimnum;
 
       // a simple heuristic for load balance
-      if (size < bigarray_bound_) {
+      if (false && size < bigarray_bound_) {
         // send it to a single random picked server
         int server = (key * 9973) % num_servers;
         ps::Key ps_key = krs[server].begin() + key;

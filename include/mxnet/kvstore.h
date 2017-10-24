@@ -158,7 +158,7 @@ class KVStore {
    * user-defined Partial Weight Updater
    * 0:key, 1:grad, 2:weight, 3:states
    */
-  typedef std::function<void(int, const NDArray&, NDArray*, NDArray*)> Partial_Updater;
+  typedef std::function<void(int, const NDArray&, NDArray*, std::vector<NDArray>*)> Partial_Updater;
   /*!
    * \brief set an updater
    *
@@ -173,9 +173,10 @@ class KVStore {
     updater_ = updater;
   }
 
-  virtual void set_partial_updater(const Partial_Updater& updater) {
+  virtual void set_partial_updater(const Partial_Updater& updater, int statenum) {
     CHECK(updater) << "invalid partial updater";
     partial_updater_ = updater;
+    partial_statenum = statenum;
   }
   /******************************************************
    * the following are used for multi-machines.
@@ -322,6 +323,7 @@ class KVStore {
   Updater updater_;
 
   Partial_Updater partial_updater_;
+  int partial_statenum; 
 
   /**
    * \brief the kvstore type

@@ -106,11 +106,19 @@ def _updater_wrapper(updater):
 
 def _partial_updater_wrapper(updater):
     """ a wrapper for the user-defined handle """
-    def updater_handle(key, lhs_handle, rhs_handle, state_handle, _):
+    def updater_handle(key, lhs_handle, rhs_handle, state_handle, statenum, _):
         """ ctypes function """
         lhs = NDArray(NDArrayHandle(lhs_handle))
         rhs = NDArray(NDArrayHandle(rhs_handle))
-        state = NDArray(NDArrayHandle(state_handle))
+        assert statenum>=1, 'only support satenum>=1.'
+
+        if statenum == 1:
+          state = NDArray(NDArrayHandle(state_handle[0]))
+        else:
+          state = []
+          for i in xrange(statenum):
+            state.append(NDArray(NDArrayHandle(state_handle[i])))
+          state = tuple(state)
         updater(key, lhs, rhs, state)
     return updater_handle
 
@@ -355,7 +363,8 @@ class KVStore(object):
             # set cmd=1
             self._send_command_to_servers(1, optim_str)
         else:
-            self._set_partial_updater(opt.get_partial_updater(optimizer))
+            upt, statenum = opt.get_partial_updater(optimizer)
+            self._set_partial_updater(upt, statenum)
 
     @property
     def type(self):
@@ -429,11 +438,11 @@ class KVStore(object):
         self._updater_func = _updater_proto(_updater_wrapper(updater))
         check_call(_LIB.MXKVStoreSetUpdater(self.handle, self._updater_func, None))
 
-    def _set_partial_updater(self, updater):
+    def _set_partial_updater(self, updater, statenum):
         _partial_updater_proto = ctypes.CFUNCTYPE(
-            None, ctypes.c_int, NDArrayHandle, NDArrayHandle, NDArrayHandle, ctypes.c_void_p)
+            None, ctypes.c_int, NDArrayHandle, NDArrayHandle, ctypes.POINTER(NDArrayHandle), ctypes.c_int, ctypes.c_void_p)
         self._partial_updater_func = _partial_updater_proto(_partial_updater_wrapper(updater))
-        check_call(_LIB.MXKVStoreSetPartialUpdater(self.handle, self._partial_updater_func, None))
+        check_call(_LIB.MXKVStoreSetPartialUpdater(self.handle, self._partial_updater_func, statenum, None))
 
     def _barrier(self):
         """Global barrier among all worker nodes

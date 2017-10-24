@@ -258,6 +258,7 @@ class SGD(Optimizer):
     def __init__(self, momentum=0.0, **kwargs):
         super(SGD, self).__init__(**kwargs)
         self.momentum = momentum
+        self.statenum = 1
 
     def create_state(self, index, weight):
         """Create additional optimizer state such as momentum.
@@ -268,10 +269,7 @@ class SGD(Optimizer):
             The weight data
 
         """
-        if self.momentum == 0.0:
-            return None
-        else:
-            return zeros(weight.shape, weight.context, dtype=weight.dtype)
+        return zeros(weight.shape, weight.context, dtype=weight.dtype)
 
     def update(self, index, weight, grad, state):
         """Update the parameters.
@@ -320,6 +318,7 @@ class NAG(SGD):
     """
     def __init__(self, **kwargs):
         super(NAG, self).__init__(**kwargs)
+        self.statenum = 1
 
     def update(self, index, weight, grad, state):
         """Update the parameters.
@@ -383,6 +382,7 @@ class SGLD(Optimizer):
     """
     def __init__(self, **kwargs):
         super(SGLD, self).__init__(**kwargs)
+        self.statenum = 0
 
     def create_state(self, index, weight):
         """Create additional optimizer state such as momentum.
@@ -452,7 +452,7 @@ class ccSGD(Optimizer):
                                     clip_gradient=clip_gradient,
                                     **kwargs)
         self.momentum = momentum
-
+        self.statenum = 0
         self.handle = Optimizer._init_cc_optimizer(
             'ccsgd',
             ['momentum', 'rescale_grad', 'clip_gradient'],
@@ -545,6 +545,7 @@ class Adam(Optimizer):
         self.beta2 = beta2
         self.epsilon = epsilon
         self.decay_factor = decay_factor
+        self.statenum = 2
 
     def create_state(self, index, weight):
         """Create additional optimizer state: mean, variance
@@ -634,6 +635,7 @@ class AdaGrad(Optimizer):
     def __init__(self, eps=1e-7, **kwargs):
         super(AdaGrad, self).__init__(**kwargs)
         self.float_stable_eps = eps
+        self.statenum = 1
 
     def create_state(self, index, weight):
         return zeros(weight.shape, weight.context)  # history
@@ -683,6 +685,7 @@ class AdaGrad_Mom(Optimizer):
         super(AdaGrad_Mom, self).__init__(**kwargs)
         self.float_stable_eps = eps
         self.momentum = momentum
+        self.statenum = 1
 
     def create_state(self, index, weight):
         return zeros(weight.shape, weight.context)  # history
@@ -733,6 +736,7 @@ class RMSProp(Optimizer):
         super(RMSProp, self).__init__(**kwargs)
         self.gamma1 = gamma1
         self.gamma2 = gamma2
+        self.statenum = 3
 
     def create_state(self, index, weight):
         """Create additional optimizer state: mean, variance
@@ -806,6 +810,7 @@ class AdaDelta(Optimizer):
         super(AdaDelta, self).__init__(**kwargs)
         self.rho = rho
         self.epsilon = epsilon
+        self.statenum = 2
 
     def create_state(self, index, weight):
         return (zeros(weight.shape, weight.context),  # accumulated g
@@ -903,4 +908,4 @@ def get_partial_updater(optimizer):
     #    print '=====', weight.asnumpy().shape, grad.asnumpy().shape, state.asnumpy().shape
     #    print '=====', np.sum(weight.asnumpy(), axis=1)
 
-    return updater
+    return updater, optimizer.statenum

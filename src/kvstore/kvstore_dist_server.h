@@ -113,9 +113,10 @@ class KVStoreDistServer {
     updater_ = updater;
   }
 
-  void set_partial_updater(const KVStore::Partial_Updater& updater)  {
+  void set_partial_updater(const KVStore::Partial_Updater& updater, int statenum)  {
     CHECK(updater);
     partial_updater_ = updater;
+    partial_statenum = statenum;
   }
   /**
    * \brief blocked until received the command \a kSyncMode
@@ -241,9 +242,9 @@ class KVStoreDistServer {
 
     int key = DecodeKey(req_data.keys[0]);
     auto& stored = store_[key];
-    auto& state = states_[key];
+    auto& states = states_[key];
     auto& stored_buf = store_buffer_[key];
-    auto& state_buf= states_buffer_[key];
+    auto& states_buf= states_buffer_[key];
     auto& grad_buf= grad_buffer_[key];
 
    // std::cout << "server, ori_index:" << req_data.ori_index << std::endl;
@@ -275,12 +276,18 @@ class KVStoreDistServer {
         // initialization
         // for the initialization, rsv_dshape is actually the original weight shape of this server.
         stored = NDArray(rsv_dshape, Context());
-        state = NDArray(rsv_dshape, Context());
+        for (int i = 0; i < partial_statenum; i++) {
+          states[i] = NDArray(rsv_dshape, Context());
+        }
         stored_buf = NDArray(rsv_dshape, Context());
-        state_buf = NDArray(rsv_dshape, Context());
+        for (int i = 0; i < partial_statenum; i++) {
+          states_buf[i] = NDArray(rsv_dshape, Context());
+        }
         grad_buf = NDArray(rsv_dshape, Context());
         CopyFromTo(recved, &stored, 0);
-        state = 0.f;
+        for (int i = 0; i < partial_statenum; i++) {
+          states[i] = 0.f;
+        }
         server->Response_Partial(req_meta);
         stored.WaitToRead();
       } else if (sync_mode_) {
@@ -290,21 +297,30 @@ class KVStoreDistServer {
         merged.request.push_back(req_meta);
 
         NDArray store_partial = stored_buf.Slice(0, rsv_dshape[0]);
-        NDArray state_partial = state_buf.Slice(0, rsv_dshape[0]);
+        std::vector<NDArray> states_partial;
+        for (int i = 0; i < partial_statenum; i++) {
+          states_partial[i] = states_buf[i].Slice(0, rsv_dshape[0]);
+        }
         NDArray grad_partial = grad_buf.Slice(0, rsv_dshape[0]);
 
-        CopyFromTo_IndexFrom(state, &state_partial, ori_index, 0);
+        for (int i = 0; i < partial_statenum; i++) {
+          CopyFromTo_IndexFrom(states[i], &states_partial[i], ori_index, 0);
+        }
         CopyFromTo_IndexFrom(stored, &store_partial, ori_index, 0);
         CopyFromTo(recved, &grad_partial, 0);
 
         exec_.Exec([this, key, &grad_partial, &ori_index, &store_partial, &state_partial](){
             CHECK(partial_updater_);
-            partial_updater_(key, grad_partial, &store_partial, &state_partial);
+            partial_updater_(key, grad_partial, &store_partial, &states_partial);
           });
         store_partial.WaitToRead();
-        state_partial.WaitToRead();
+        for (int i = 0; i < partial_statenum; i++) {
+          states_partial[i].WaitToRead();
+        }
 
-        CopyFromTo_IndexTo(state_partial, &state, ori_index, 0);
+        for (int i = 0; i < partial_statenum; i++) {
+          CopyFromTo_IndexTo(states_partial[i], &states[i], ori_index, 0);
+        }
         CopyFromTo_IndexTo(store_partial, &stored, ori_index, 0);
 
         if (merged.request.size() == (size_t)ps::NumWorkers()) {
@@ -325,13 +341,18 @@ class KVStoreDistServer {
         start = clock();
 #endif
         NDArray store_partial = stored_buf.Slice(0, rsv_dshape[0]);
-        NDArray state_partial = state_buf.Slice(0, rsv_dshape[0]);
+        std::vector<NDArray> states_partial;
+        for (int i = 0; i < partial_statenum; i++) {
+          states_partial[i] = states_buf[i].Slice(0, rsv_dshape[0]);
+        }
         NDArray grad_partial = grad_buf.Slice(0, rsv_dshape[0]);
 
 #if DBG_SHOW_TIME 
         start1 = clock();
 #endif
-        CopyFromTo_IndexFrom(state, &state_partial, ori_index, 0);
+        for (int i = 0; i < partial_statenum; i++) {
+          CopyFromTo_IndexFrom(states[i], &states_partial[i], ori_index, 0);
+        }
 #if DBG_SHOW_TIME 
         end1 = clock();
         cost_0 = (float)(end1 - start1)*1000 / CLOCKS_PER_SEC;
@@ -340,7 +361,9 @@ class KVStoreDistServer {
 #if DBG_SHOW_TIME 
         start1 = clock();
 #endif
-        state_partial.WaitToRead();
+        for (int i = 0; i < partial_statenum; i++) {
+          states_partial[i].WaitToRead();
+        }
 #if DBG_SHOW_TIME 
         end1 = clock();
         cost_1 = (float)(end1 - start1)*1000 / CLOCKS_PER_SEC;
@@ -368,7 +391,9 @@ class KVStoreDistServer {
           });
         server->Response_Partial(req_meta);
         store_partial.WaitToRead();
-        state_partial.WaitToRead();
+        for (int i = 0; i < partial_statenum; i++) {
+          states_partial[i].WaitToRead();
+        }
 
 #if DBG_SHOW_TIME 
         end = clock();
@@ -380,10 +405,14 @@ class KVStoreDistServer {
 #endif
 
         //std::cout << "server push handle:" << ori_index.size() << std::endl;
-        CopyFromTo_IndexTo(state_partial, &state, ori_index, 0);
+        for (int i = 0; i < partial_statenum; i++) {
+          CopyFromTo_IndexTo(states_partial[i], &states[i], ori_index, 0);
+        }
         CopyFromTo_IndexTo(store_partial, &stored, ori_index, 0);
         stored.WaitToRead();
-        state.WaitToRead();
+        for (int i = 0; i < partial_statenum; i++) {
+          states[i].WaitToRead();
+        }
        
 #if DBG_SHOW_TIME 
         end = clock();
@@ -442,13 +471,13 @@ class KVStoreDistServer {
   KVStore::Controller controller_;
   KVStore::Updater updater_;
   KVStore::Partial_Updater partial_updater_;
+  int partial_statenum;
 
   std::unordered_map<int, NDArray> store_;
-  std::unordered_map<int, NDArray> states_;
+  std::unordered_map<int, std::vector<NDArray> > states_;
   std::unordered_map<int, NDArray> store_buffer_;
-  std::unordered_map<int, NDArray> states_buffer_;
+  std::unordered_map<int, std::vector<NDArray> > states_buffer_;
   std::unordered_map<int, NDArray> grad_buffer_;
-
 
   struct MergeBuf {
     std::vector<ps::KVMeta> request;

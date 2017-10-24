@@ -652,6 +652,57 @@ class AdaGrad(Optimizer):
         history[:] += (grad * grad)
         weight[:] += -lr * (grad / sqrt(history + self.float_stable_eps) + wd * weight)
 
+@register
+class AdaGrad_Mom(Optimizer):
+    """AdaGrad optimizer of Duchi et al., 2011,
+
+    This code follows the version in http://arxiv.org/pdf/1212.5701v1.pdf  Eq(5)
+    by Matthew D. Zeiler, 2012. AdaGrad will help the network to converge faster
+    in some cases.
+
+    Parameters
+    ----------
+    learning_rate : float, optional
+        Step size.
+        Default value is set to 0.05.
+
+    wd : float, optional
+        L2 regularization coefficient add to all the weights
+
+    rescale_grad : float, optional
+        rescaling factor of gradient.
+
+    eps: float, optional
+        A small float number to make the updating processing stable
+        Default value is set to 1e-7.
+
+    clip_gradient : float, optional
+        clip gradient in range [-clip_gradient, clip_gradient]
+    """
+    def __init__(self, momentum=0.5, eps=1e-7, **kwargs):
+        super(AdaGrad_Mom, self).__init__(**kwargs)
+        self.float_stable_eps = eps
+        self.momentum = momentum
+
+    def create_state(self, index, weight):
+        return zeros(weight.shape, weight.context)  # history
+
+    def update(self, index, weight, grad, state):
+        assert(isinstance(weight, NDArray))
+        assert(isinstance(grad, NDArray))
+        lr = self._get_lr(index)
+        wd = self._get_wd(index)
+        self._update_count(index)
+
+        grad = grad * self.rescale_grad
+        if self.clip_gradient is not None:
+            grad = clip(grad, -self.clip_gradient, self.clip_gradient)
+        history = state
+        history[:] *= self.momentum
+        history[:] += (1.0 - self.momentum) * (grad * grad)
+        weight[:] += -lr * (grad / sqrt(history + self.float_stable_eps) + wd * weight)
+
+
 
 @register
 class RMSProp(Optimizer):

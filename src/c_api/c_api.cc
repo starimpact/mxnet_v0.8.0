@@ -1411,6 +1411,7 @@ int MXKVStoreSetPartialUpdater(KVStoreHandle handle,
       *((NDArray*)state_copy[i]) = (*state)[i];
     }
     updater_temp(key, recv_copy, local_copy, state_copy, statenum, updater_handle_temp);
+    delete []state_copy;
   };
   static_cast<KVStore*>(handle)->set_partial_updater(updt, statenum);
   API_END();

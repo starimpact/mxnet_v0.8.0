@@ -244,12 +244,12 @@ class KVStoreDist : public KVStoreLocal {
     }
   }
 
-  void set_partial_updater(const Partial_Updater& updater, statenum) override {
+  void set_partial_updater(const Partial_Updater& updater, int statenum) override {
     CHECK(updater) << "invalid updater";
     if (IsServerNode()) {
-      CHECK_NOTNULL(server_)->set_partial_updater(updater, satenum);
+      CHECK_NOTNULL(server_)->set_partial_updater(updater, statenum);
     } else {
-      partial_satenum = statenum;
+      partial_statenum = statenum;
       partial_updater_ = updater;
     }
   }

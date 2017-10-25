@@ -1227,11 +1227,13 @@ MXNET_DLL int MXKVStorePullPartial(KVStoreHandle handle,
 typedef void (MXKVStorePartialUpdater)(int key,
                                 NDArrayHandle recv,
                                 NDArrayHandle local,
-                                NDArrayHandle state,
+                                NDArrayHandle *state,
+                                int statenum,
                                 void *handle);
 
 MXNET_DLL int MXKVStoreSetPartialUpdater(KVStoreHandle handle,
                                   MXKVStorePartialUpdater updater,
+                                  int statenum,
                                   void *updater_handle);
 
 

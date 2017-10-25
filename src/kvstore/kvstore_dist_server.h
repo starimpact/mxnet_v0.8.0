@@ -97,6 +97,7 @@ class KVStoreDistServer {
     ps_server_->set_request_partial_handle(
         std::bind(&KVStoreDistServer::DataHandle_Partial, this, _1, _2, _3));
     sync_mode_ = false;
+    partial_statenum = 0;
   }
 
   ~KVStoreDistServer() {
@@ -117,6 +118,7 @@ class KVStoreDistServer {
     CHECK(updater);
     partial_updater_ = updater;
     partial_statenum = statenum;
+//    std::cout << "server:partial_statenum:" <<  partial_statenum << "\n";
   }
   /**
    * \brief blocked until received the command \a kSyncMode
@@ -271,23 +273,24 @@ class KVStoreDistServer {
                       rsv_dshape, cpu::kDevMask);
       NDArray recved = NDArray(recv_blob, 0);
     //  std::cout << "server handle push" << std::endl;
+      if (!stored.is_none() && states.size() == 0 && partial_statenum > 0) {
+       // std::cout << "server: data partial handle:" << partial_statenum << std::endl;
+        states.resize(partial_statenum);
+        states_buf.resize(partial_statenum);
+        for (int i = 0; i < partial_statenum; i++) {
+          states[i] = NDArray(stored.shape(), Context());
+          states_buf[i] = NDArray(stored.shape(), Context());
+          states[i] = 0.f;
+        }
+      }
 
       if (stored.is_none()) {
         // initialization
         // for the initialization, rsv_dshape is actually the original weight shape of this server.
         stored = NDArray(rsv_dshape, Context());
-        for (int i = 0; i < partial_statenum; i++) {
-          states[i] = NDArray(rsv_dshape, Context());
-        }
         stored_buf = NDArray(rsv_dshape, Context());
-        for (int i = 0; i < partial_statenum; i++) {
-          states_buf[i] = NDArray(rsv_dshape, Context());
-        }
         grad_buf = NDArray(rsv_dshape, Context());
         CopyFromTo(recved, &stored, 0);
-        for (int i = 0; i < partial_statenum; i++) {
-          states[i] = 0.f;
-        }
         server->Response_Partial(req_meta);
         stored.WaitToRead();
       } else if (sync_mode_) {
@@ -298,6 +301,7 @@ class KVStoreDistServer {
 
         NDArray store_partial = stored_buf.Slice(0, rsv_dshape[0]);
         std::vector<NDArray> states_partial;
+        states_partial.resize(partial_statenum);
         for (int i = 0; i < partial_statenum; i++) {
           states_partial[i] = states_buf[i].Slice(0, rsv_dshape[0]);
         }
@@ -309,7 +313,7 @@ class KVStoreDistServer {
         CopyFromTo_IndexFrom(stored, &store_partial, ori_index, 0);
         CopyFromTo(recved, &grad_partial, 0);
 
-        exec_.Exec([this, key, &grad_partial, &ori_index, &store_partial, &state_partial](){
+        exec_.Exec([this, key, &grad_partial, &ori_index, &store_partial, &states_partial](){
             CHECK(partial_updater_);
             partial_updater_(key, grad_partial, &store_partial, &states_partial);
           });
@@ -330,6 +334,7 @@ class KVStoreDistServer {
           merged.request.clear();
         }
       } else {
+//        std::cout << "hello async push...\n";
         // async push
 #if DBG_SHOW_TIME 
         clock_t start, end;
@@ -342,6 +347,7 @@ class KVStoreDistServer {
 #endif
         NDArray store_partial = stored_buf.Slice(0, rsv_dshape[0]);
         std::vector<NDArray> states_partial;
+        states_partial.resize(partial_statenum);
         for (int i = 0; i < partial_statenum; i++) {
           states_partial[i] = states_buf[i].Slice(0, rsv_dshape[0]);
         }
@@ -385,15 +391,17 @@ class KVStoreDistServer {
         start = clock();
 #endif
 
-        exec_.Exec([this, key, &grad_partial, &ori_index, &store_partial, &state_partial](){
+//        std::cout << "hello async push 1...\n";
+        exec_.Exec([this, key, &grad_partial, &ori_index, &store_partial, &states_partial](){
             CHECK(partial_updater_);
-            partial_updater_(key, grad_partial, &store_partial, &state_partial);
+            partial_updater_(key, grad_partial, &store_partial, &states_partial);
           });
         server->Response_Partial(req_meta);
         store_partial.WaitToRead();
         for (int i = 0; i < partial_statenum; i++) {
           states_partial[i].WaitToRead();
         }
+//        std::cout << "hello async push 2...\n";
 
 #if DBG_SHOW_TIME 
         end = clock();
@@ -413,6 +421,7 @@ class KVStoreDistServer {
         for (int i = 0; i < partial_statenum; i++) {
           states[i].WaitToRead();
         }
+//        std::cout << "hello async push 3...\n";
        
 #if DBG_SHOW_TIME 
         end = clock();

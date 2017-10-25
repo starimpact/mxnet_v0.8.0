@@ -1397,16 +1397,18 @@ int MXKVStoreSetPartialUpdater(KVStoreHandle handle,
   API_BEGIN();
   MXKVStorePartialUpdater* updater_temp = updater;
   void* updater_handle_temp = updater_handle;
-  std::function<void(int, const NDArray&, NDArray*, NDArray*)> updt
+  std::function<void(int, const NDArray&, NDArray*, std::vector<NDArray>*)> updt
   = [updater_temp, updater_handle_temp](int key, const NDArray& recv, NDArray* local, std::vector<NDArray> *state) {
+    int statenum = state->size();
+//    std::cout << "MXKVStoreSetPartialUpdater:" << statenum << "\n";
     NDArray* recv_copy = new NDArray();
     *recv_copy = recv;
     NDArray* local_copy = new NDArray();
     *local_copy = *local;
-    NDArray* state_copy[statenum];
+    NDArrayHandle* state_copy = new NDArrayHandle[statenum];
     for (int i = 0; i < statenum; i++) {
       state_copy[i] = new NDArray();
-      *(state_copy[i]) = (*state)[i];
+      *((NDArray*)state_copy[i]) = (*state)[i];
     }
     updater_temp(key, recv_copy, local_copy, state_copy, statenum, updater_handle_temp);
   };

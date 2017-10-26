@@ -681,14 +681,15 @@ class AdaGrad_Mom(Optimizer):
     clip_gradient : float, optional
         clip gradient in range [-clip_gradient, clip_gradient]
     """
-    def __init__(self, momentum=0.5, eps=1e-7, **kwargs):
+    def __init__(self, momentum=0.9, eps=1e-4, **kwargs):
         super(AdaGrad_Mom, self).__init__(**kwargs)
         self.float_stable_eps = eps
         self.momentum = momentum
-        self.statenum = 1
+        self.statenum = 2
 
     def create_state(self, index, weight):
-        return zeros(weight.shape, weight.context)  # history
+        return (zeros(weight.shape, weight.context),  
+                zeros(weight.shape, weight.context))  # history
 
     def update(self, index, weight, grad, state):
         assert(isinstance(weight, NDArray))
@@ -700,11 +701,13 @@ class AdaGrad_Mom(Optimizer):
         grad = grad * self.rescale_grad
         if self.clip_gradient is not None:
             grad = clip(grad, -self.clip_gradient, self.clip_gradient)
-        history = state
+        histgrad = state[0]
+        history = state[1]
         history[:] *= self.momentum
         history[:] += (1.0 - self.momentum) * (grad * grad)
-        weight[:] += -lr * (grad / sqrt(history + self.float_stable_eps) + wd * weight)
-
+        histgrad[:] *= self.momentum
+        histgrad[:] += (1.0 - self.momentum) * grad
+        weight[:] += -lr * (histgrad / sqrt(history + self.float_stable_eps) + wd * weight)
 
 
 @register

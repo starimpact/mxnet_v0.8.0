@@ -210,7 +210,7 @@ class CuDNNConvolutionOp : public Operator {
                req[conv::kWeight] == kWriteTo? &beta : &beta_add,
                filter_desc_,
                gwmat_ptr + weight_offset_ * g), CUDNN_STATUS_SUCCESS);
-      #elif CUDNN_MAJOR == 5
+      #elif CUDNN_MAJOR >= 5
       CUDNN_CALL(cudnnConvolutionBackwardFilter(s->dnn_handle_,
                &alpha,
                in_desc_,
@@ -239,7 +239,7 @@ class CuDNNConvolutionOp : public Operator {
                &beta,
                in_desc_,
                gdata_ptr + data_offset_ * g), CUDNN_STATUS_SUCCESS);
-      #elif CUDNN_MAJOR == 5
+      #elif CUDNN_MAJOR >= 5
       CHECK_EQ(cudnnConvolutionBackwardData(s->dnn_handle_,
                &alpha,
                filter_desc_,
@@ -263,7 +263,7 @@ class CuDNNConvolutionOp : public Operator {
                    const std::vector<TBlob> &out_data) {
     using namespace mshadow;
     size_t expected = param_.no_bias ? 2 : 3;
-    #if CUDNN_MAJOR == 5
+    #if CUDNN_MAJOR >= 5
     format_ = CUDNN_TENSOR_NCHW;
     #endif
     CHECK_EQ(in_data.size(), expected);
@@ -286,7 +286,7 @@ class CuDNNConvolutionOp : public Operator {
         out_offset_ = out.shape_[1] /param_.num_group * out.shape_[2] * out.shape_[3];
         weight_offset_ = param_.num_filter / param_.num_group * data.shape_[1] / param_.num_group
                         * param_.kernel[0] * param_.kernel[1];
-        #if CUDNN_MAJOR == 5
+        #if CUDNN_MAJOR >= 5
         CHECK_EQ(cudnnSetFilter4dDescriptor(filter_desc_,
                                             dtype_,
                                             format_,
@@ -302,6 +302,17 @@ class CuDNNConvolutionOp : public Operator {
                                             param_.kernel[0],
                                             param_.kernel[1]), CUDNN_STATUS_SUCCESS);
         #endif
+	#if CUDNN_MAJOR >= 6
+        CHECK_EQ(cudnnSetConvolution2dDescriptor(conv_desc_,
+                                                param_.pad[0],
+                                                param_.pad[1],
+                                                param_.stride[0],
+                                                param_.stride[1],
+                                                1,
+                                                1,
+                                                CUDNN_CROSS_CORRELATION,
+						CUDNN_DATA_FLOAT), CUDNN_STATUS_SUCCESS);
+	#else
         CHECK_EQ(cudnnSetConvolution2dDescriptor(conv_desc_,
                                                 param_.pad[0],
                                                 param_.pad[1],
@@ -310,6 +321,7 @@ class CuDNNConvolutionOp : public Operator {
                                                 1,
                                                 1,
                                                 CUDNN_CROSS_CORRELATION), CUDNN_STATUS_SUCCESS);
+        #endif
         CHECK_EQ(cudnnSetTensor4dDescriptorEx(in_desc_,
                                               dtype_,
                                               data.shape_[0],
@@ -382,7 +394,7 @@ class CuDNNConvolutionOp : public Operator {
                                     static_cast<int>(oshape[4]),
                                     1};
 
-        #if CUDNN_MAJOR == 5
+        #if CUDNN_MAJOR >= 5
         CHECK_EQ(cudnnSetFilterNdDescriptor(filter_desc_,
                                             dtype_,
                                             format_,
@@ -506,7 +518,7 @@ class CuDNNConvolutionOp : public Operator {
   cudnnConvolutionFwdAlgo_t algo_;
   cudnnConvolutionBwdDataAlgo_t back_algo_;
   cudnnConvolutionBwdFilterAlgo_t back_algo_w_;
-  #if CUDNN_MAJOR == 5
+  #if CUDNN_MAJOR >= 5
   cudnnTensorFormat_t format_;
   #endif
   ConvolutionParam param_;

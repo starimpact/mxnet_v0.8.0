@@ -38,7 +38,7 @@ void TuneCudnnConvolution(ConvolutionParam param,
   // convert MB to bytes
 
   size_t expected = param.no_bias ? 2 : 3;
-#if CUDNN_MAJOR == 5
+#if CUDNN_MAJOR >= 5
   cudnnTensorFormat_t format = CUDNN_TENSOR_NCHW;
 #endif
   CHECK_EQ(in_shape->size(), expected);
@@ -69,7 +69,7 @@ void TuneCudnnConvolution(ConvolutionParam param,
   CHECK_EQ(cudnnCreateTensorDescriptor(&bias_desc), CUDNN_STATUS_SUCCESS);
   CHECK_EQ(cudnnCreateFilterDescriptor(&filter_desc), CUDNN_STATUS_SUCCESS);
   CHECK_EQ(cudnnCreateConvolutionDescriptor(&conv_desc), CUDNN_STATUS_SUCCESS);
-#if CUDNN_MAJOR == 5
+#if CUDNN_MAJOR >= 5
   if (in_shape->at(0).ndim() == 4) {
     // 2d conv
     CHECK_EQ(cudnnSetFilter4dDescriptor(filter_desc,
@@ -119,6 +119,17 @@ void TuneCudnnConvolution(ConvolutionParam param,
 #endif
   if (param.kernel.ndim() == 2) {
     // 2d conv
+    #if CUDNN_MAJOR >= 6
+    CHECK_EQ(cudnnSetConvolution2dDescriptor(conv_desc,
+                                             param.pad[0],
+                                             param.pad[1],
+                                             param.stride[0],
+                                             param.stride[1],
+                                             1,
+                                             1,
+                                             CUDNN_CROSS_CORRELATION,
+					     CUDNN_DATA_FLOAT), CUDNN_STATUS_SUCCESS);
+    #else
     CHECK_EQ(cudnnSetConvolution2dDescriptor(conv_desc,
                                              param.pad[0],
                                              param.pad[1],
@@ -127,6 +138,7 @@ void TuneCudnnConvolution(ConvolutionParam param,
                                              1,
                                              1,
                                              CUDNN_CROSS_CORRELATION), CUDNN_STATUS_SUCCESS);
+    #endif
     CHECK_EQ(cudnnSetTensor4dDescriptorEx(in_desc,
                                           dtype,
                                           x_shape[0],

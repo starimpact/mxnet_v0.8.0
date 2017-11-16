@@ -244,7 +244,7 @@ class CuDNNDeconvolutionOp : public Operator {
                                           param_.kernel[0],
                                           param_.kernel[1]), CUDNN_STATUS_SUCCESS);
       #endif
-      #if CUDNN_MAJOR >=5
+      #if CUDNN_MAJOR >=6
       CHECK_EQ(cudnnSetConvolution2dDescriptor(conv_desc_,
                                                pad_y,
                                                pad_x,

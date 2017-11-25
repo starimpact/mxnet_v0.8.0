@@ -195,6 +195,7 @@ class CommDevice : public Comm {
     sorted_key_shape_.push_back(std::make_pair(key, shape));
   }
 
+#if 0
   const NDArray& Reduce(int key, const std::vector<NDArray>& src,
                         int priority) override {
     // avoid extra copy for single device, but it may bring problems for
@@ -256,6 +257,70 @@ class CommDevice : public Comm {
 
     //std::cout << "hi, elementsum...0\n";
     ElementwiseSum(reduce, &buf.mergedtmp);
+//    std::cout << "hi, elementsum...1\n";
+
+    return buf.mergedtmp;
+  }
+#endif
+
+  const NDArray& Reduce(int key, const std::vector<NDArray>& src,
+                        int priority) override {
+    // avoid extra copy for single device, but it may bring problems for
+    // abnormal usage of kvstore
+    if (src.size() == 1) {
+      return src[0];
+    }
+
+    if (!inited_) {
+      std::vector<Context> devs;
+      for (const auto& a : src) {
+        devs.push_back(a.ctx());
+      }
+      InitMergeBuffer(devs);
+      if (dmlc::GetEnv("MXNET_ENABLE_GPU_P2P", 1)) {
+        EnableP2P(devs);
+      }
+    }
+
+    auto& buf = merge_buf_[key];
+    size_t src_rowsnum = src[0].shape()[0];
+
+//    std::cout << "hi, elementsum.-1.." << src.size() << std::endl;
+    if (src_rowsnum > buf.merged.shape()[0]) {
+      buf.merged = NDArray(src[0].shape(), buf.merged.ctx());
+      if (!buf.copy_buf.empty()) {
+        buf.copy_buf[0] = NDArray(buf.merged.shape(), buf.merged.ctx());
+      }
+    }
+//    std::cout << "hi, elementsum.-2.." << src.size() << std::endl;
+    CHECK_LE(src_rowsnum, buf.merged.shape()[0]) << "src shape_0_" << src[0].shape() << " size must be LE merged_shape0_" << buf.merged.shape();
+    buf.mergedtmp = buf.merged.Slice(0, src_rowsnum);
+
+    std::vector<NDArray> reduce(2);
+    //std::cout << "hi, elementsum..." << src[0].shape() << buf.merged.shape() << std::endl;
+    CopyFromTo(src[0], &(buf.mergedtmp), priority);
+//    std::cout << "hi, elementsum.-3.." << src.size() << std::endl;
+    reduce[0] = buf.mergedtmp;
+
+    size_t ori_size = buf.copy_buf.size();
+    if (ori_size == 0) {
+      buf.copy_buf.resize(1);
+      buf.copy_buf[0] = NDArray(buf.mergedtmp.shape(), buf.mergedtmp.ctx());
+    }
+//    std::cout << "hi, elementsum.0.." << src.size() << std::endl;
+    NDArray copy_buftmp = buf.copy_buf[0].Slice(0, src_rowsnum);
+//    std::cout << "hi, elementsum.1.." << src.size() << std::endl;
+    reduce[1] = copy_buftmp;
+    for (size_t i = 0; i < src.size()-1; ++i) {
+      //std::cout << "hi, elementsum:" << i << ">>>" << src[i+1].shape() << buf.copy_buf[i].shape() << std::endl;
+      CopyFromTo(src[i+1], &copy_buftmp, priority);
+//      std::cout << "hi, elementsum_0:" << i << "<<<\n";
+      ElementwiseSum(reduce, &buf.mergedtmp);
+//      std::cout << "hi, elementsum_1:" << i << "<<<\n";
+      buf.mergedtmp.WaitToRead();
+//      std::cout << "hi, elementsum_2:" << i << "<<<\n";
+    }
+    //std::cout << "hi, elementsum...0\n";
 //    std::cout << "hi, elementsum...1\n";
 
     return buf.mergedtmp;

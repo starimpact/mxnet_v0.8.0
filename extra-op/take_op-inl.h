@@ -42,17 +42,19 @@ class TakeOp : public Operator {
     using namespace mshadow;
     Stream<xpu> *s = ctx.get_stream<xpu>();
 //    Stream<cpu> *s_cpu = ctx.get_stream<cpu>();
-    Tensor<xpu, 2> data = in_data[take_::kData].get<xpu, 2, real_t>(s); 
+    TShape dshape = in_data[take_::kData].shape_;
+    std::cout << "take_" << dshape[0] << dshape[1] << "\n";
+    Tensor<xpu, 3> data = in_data[take_::kData].get_with_shape<xpu, 3, real_t>(Shape3(dshape[0], dshape[1], 1), s); 
     Tensor<xpu, 1> index = in_data[take_::kIndex].get<xpu, 1, real_t>(s);
-    Tensor<xpu, 1> out = out_data[take_::kOut].get<xpu, 1, real_t>(s);
+    Tensor<xpu, 2> out = out_data[take_::kOut].get_with_shape<xpu, 2, real_t>(Shape2(dshape[0], 1), s);
     size_t size0 = index.size(0);
     Tensor<cpu, 1> index_cpu = NewTensor<cpu>(Shape1(size0), 0.f);
 //    Tensor<cpu, 1> index_cpu = ctx.requested[take_::kTempSpace].get_space<cpu>(Shape1(1), s_cpu);
     Copy<1, real_t>(index_cpu, index, s);
     for (size_t idx = 0; idx < size0; idx++) { 
       int idx0 = static_cast<int>(index_cpu[idx]);
-//      Copy<1, real_t>(, s);
-      out[idx] = data[idx][idx0];
+      Copy<1, real_t>(out[idx], data[idx][idx0], s);
+//      out[idx] = data[idx][idx0];
     }
     FreeSpace(&index_cpu);
   }
@@ -68,8 +70,10 @@ class TakeOp : public Operator {
     Stream<xpu> *s = ctx.get_stream<xpu>();
 //    Stream<cpu> *s_cpu = ctx.get_stream<cpu>();
     Tensor<xpu, 1> index = in_data[take_::kIndex].get<xpu, 1, real_t>(s);
-    Tensor<xpu, 1> grad_out = out_grad[take_::kOut].get<xpu, 1, real_t>(s);
-    Tensor<xpu, 2> grad_in = in_grad[take_::kData].get<xpu, 2, real_t>(s);
+    TShape ishape = out_grad[take_::kOut].shape_;
+    Tensor<xpu, 2> grad_out = out_grad[take_::kOut].get_with_shape<xpu, 2, real_t>(Shape2(ishape[0], 1), s);
+    TShape ishape2 = in_grad[take_::kData].shape_;
+    Tensor<xpu, 3> grad_in = in_grad[take_::kData].get_with_shape<xpu, 3, real_t>(Shape3(ishape2[0], ishape2[1], 1), s);
     size_t size0 = index.size(0);
     Tensor<cpu, 1> index_cpu = NewTensor<cpu>(Shape1(size0), 0.f);
 //    Tensor<cpu, 1> index_cpu = ctx.requested[take_::kTempSpace].get_space<cpu>(Shape1(1), s_cpu);
@@ -125,7 +129,7 @@ class TakeProp : public OperatorProperty {
     CHECK_EQ(dshape.ndim(), 2) << "data shape must be 2 dimension.";
     CHECK_EQ(ishape.ndim(), 1) << "index shape must be 1 dimension.";
     CHECK_GE(ishape[0], 1) << "index must be a scalar or a vector.";
-    TShape oshape(dshape.data()+1, dshape.data()+dshape.ndim());
+    TShape oshape = Shape2(dshape[0], 1);
     out_shape->clear();
     out_shape->push_back(oshape);
 

@@ -45,12 +45,16 @@ class TakeOp : public Operator {
     Tensor<xpu, 2> data = in_data[take_::kData].get<xpu, 2, real_t>(s); 
     Tensor<xpu, 1> index = in_data[take_::kIndex].get<xpu, 1, real_t>(s);
     Tensor<xpu, 1> out = out_data[take_::kOut].get<xpu, 1, real_t>(s);
-    real_t fidx = 0.f;
-    Tensor<cpu, 1> index_cpu(&fidx, Shape1(1));
+    size_t size0 = index.size(0);
+    Tensor<cpu, 1> index_cpu = NewTensor<cpu>(Shape1(size0), 0.f);
 //    Tensor<cpu, 1> index_cpu = ctx.requested[take_::kTempSpace].get_space<cpu>(Shape1(1), s_cpu);
     Copy<1, real_t>(index_cpu, index, s);
-    int idx = static_cast<int>(index_cpu[0]);
-    Copy<1, real_t>(out, data[idx], s);
+    for (size_t idx = 0; idx < size0; idx++) { 
+      int idx0 = static_cast<int>(index_cpu[idx]);
+//      Copy<1, real_t>(, s);
+      out[idx] = data[idx][idx0];
+    }
+    FreeSpace(&index_cpu);
   }
 
   virtual void Backward(const OpContext &ctx,
@@ -66,15 +70,18 @@ class TakeOp : public Operator {
     Tensor<xpu, 1> index = in_data[take_::kIndex].get<xpu, 1, real_t>(s);
     Tensor<xpu, 1> grad_out = out_grad[take_::kOut].get<xpu, 1, real_t>(s);
     Tensor<xpu, 2> grad_in = in_grad[take_::kData].get<xpu, 2, real_t>(s);
-    real_t fidx = 0.f;
-    Tensor<cpu, 1> index_cpu(&fidx, Shape1(1));
+    size_t size0 = index.size(0);
+    Tensor<cpu, 1> index_cpu = NewTensor<cpu>(Shape1(size0), 0.f);
 //    Tensor<cpu, 1> index_cpu = ctx.requested[take_::kTempSpace].get_space<cpu>(Shape1(1), s_cpu);
     Copy<1, real_t>(index_cpu, index, s);
     if (req[take_::kOut] == kWriteTo) {
       grad_in = 0.f;
     }
-    int idx = static_cast<int>(index_cpu[0]);
-    grad_in[idx] += grad_out;
+    for (size_t idx = 0; idx < size0; idx++) {
+      int idx0 = static_cast<int>(index_cpu[idx]);
+      grad_in[idx][idx0] += grad_out[idx];
+    }
+    FreeSpace(&index_cpu);
   }
 
  private:
@@ -115,8 +122,9 @@ class TakeProp : public OperatorProperty {
     CHECK_EQ(in_shape->size(), 2) << "Take operator must have 2 inputs.";
     const TShape &dshape = (*in_shape)[take_::kData];
     const TShape &ishape = (*in_shape)[take_::kIndex];
+    CHECK_EQ(dshape.ndim(), 2) << "data shape must be 2 dimension.";
     CHECK_EQ(ishape.ndim(), 1) << "index shape must be 1 dimension.";
-    CHECK_EQ(ishape[0], 1) << "index must be a scalar.";
+    CHECK_GE(ishape[0], 1) << "index must be a scalar or a vector.";
     TShape oshape(dshape.data()+1, dshape.data()+dshape.ndim());
     out_shape->clear();
     out_shape->push_back(oshape);

@@ -43,7 +43,7 @@ class TakeOp : public Operator {
     Stream<xpu> *s = ctx.get_stream<xpu>();
 //    Stream<cpu> *s_cpu = ctx.get_stream<cpu>();
     TShape dshape = in_data[take_::kData].shape_;
-    std::cout << "take_" << dshape[0] << dshape[1] << "\n";
+//    std::cout << "take_" << dshape[0] << dshape[1] << "\n";
     Tensor<xpu, 3> data = in_data[take_::kData].get_with_shape<xpu, 3, real_t>(Shape3(dshape[0], dshape[1], 1), s); 
     Tensor<xpu, 1> index = in_data[take_::kIndex].get<xpu, 1, real_t>(s);
     Tensor<xpu, 2> out = out_data[take_::kOut].get_with_shape<xpu, 2, real_t>(Shape2(dshape[0], 1), s);

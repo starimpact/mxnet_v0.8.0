@@ -8,6 +8,7 @@
 #include <dmlc/logging.h>
 #include "./kvstore_local.h"
 // #include "./kvstore_device.h"
+#include "../ndarray/ndarray_function.h"
 #if MXNET_USE_DIST_KVSTORE
 #include "./kvstore_dist.h"
 #endif  // MXNET_USE_DIST_KVSTORE
@@ -55,6 +56,41 @@ void CopyFromTo_IndexTo(const NDArray& ndfrom, NDArray *ndto, const std::vector<
 //      std::cout << "1:" << ndfrom.shape() << idx << ";" << ndto->shape() << idxto << "\n";
     NDArray from = ndfrom.At(idx);
     NDArray to = ndto->At(idxto);
+    TBlob tmpfrom = from.data();
+    TBlob tmpto = to.data();
+    mshadow::Copy(tmpto.FlatTo1D<cpu, float>(), tmpfrom.FlatTo1D<cpu, float>());
+  }
+}
+
+// copy data of indexfrom positions of ndfrom to ndto.
+void CopyFromTo_IndexFrom(const NDArray& ndfrom, NDArray *ndto, const std::vector<int>& indexfrom, int priority) {
+  const TShape& shapeto = ndto->shape();
+  CHECK_EQ(shapeto[0], indexfrom.size());
+  for (std::size_t idx = 0; idx < shapeto[0]; idx++) {
+    int idxfrom = indexfrom[idx];
+    if (idxfrom < 0) continue;
+//    if (idxfrom >= ndfrom.shape()[0] || idx >= ndto->shape()[0])
+//      std::cout << "2:" << ndfrom.shape() << idxfrom << ";" << ndto->shape() << idx << "\n";
+    NDArray from = ndfrom.At(idxfrom);
+    NDArray to = ndto->At(idx);
+    TBlob tmpfrom = from.data();
+    TBlob tmpto = to.data();
+    mshadow::Copy(tmpto.FlatTo1D<cpu, float>(), tmpfrom.FlatTo1D<cpu, float>());
+  }
+}
+
+/*
+// copy ndfrom to the indexto positions of ndto.
+void CopyFromTo_IndexTo(const NDArray& ndfrom, NDArray *ndto, const std::vector<int>& indexto, int priority) {
+  const TShape& shapefrom = ndfrom.shape();
+  CHECK_EQ(shapefrom[0], indexto.size());
+  for (std::size_t idx = 0; idx < shapefrom[0]; idx++) {
+    int idxto = indexto[idx];
+    if (idxto < 0) continue;
+//    if (idx >= ndfrom.shape()[0] || idxto >= ndto->shape()[0])
+//      std::cout << "1:" << ndfrom.shape() << idx << ";" << ndto->shape() << idxto << "\n";
+    NDArray from = ndfrom.At(idx);
+    NDArray to = ndto->At(idxto);
     CopyFromTo(from, &to, priority);
   }
 }
@@ -73,5 +109,6 @@ void CopyFromTo_IndexFrom(const NDArray& ndfrom, NDArray *ndto, const std::vecto
     CopyFromTo(from, &to, priority);
   }
 }
+*/
 
 }  // namespace mxnet

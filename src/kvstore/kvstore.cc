@@ -47,36 +47,46 @@ KVStore* KVStore::Create(const char *type_name) {
 
 // copy ndfrom to the indexto positions of ndto.
 void CopyFromTo_IndexTo(const NDArray& ndfrom, NDArray *ndto, const std::vector<int>& indexto, int priority) {
-  const TShape& shapefrom = ndfrom.shape();
-  CHECK_EQ(shapefrom[0], indexto.size());
-  for (std::size_t idx = 0; idx < shapefrom[0]; idx++) {
-    int idxto = indexto[idx];
-    if (idxto < 0) continue;
-//    if (idx >= ndfrom.shape()[0] || idxto >= ndto->shape()[0])
-//      std::cout << "1:" << ndfrom.shape() << idx << ";" << ndto->shape() << idxto << "\n";
-    NDArray from = ndfrom.At(idx);
-    NDArray to = ndto->At(idxto);
-    TBlob tmpfrom = from.data();
-    TBlob tmpto = to.data();
-    mshadow::Copy(tmpto.FlatTo1D<cpu, float>(), tmpfrom.FlatTo1D<cpu, float>());
-  }
+  std::vector<Engine::VarHandle> const_vars;
+  if (ndfrom.var() != ndto->var()) const_vars.push_back(ndfrom.var());
+  std::vector<Engine::VarHandle> mute_vars;
+  mute_vars.push_back(ndto->var());
+  Engine::Get()->PushSync([ndfrom, ndto, indexto](RunContext ctx) {
+      const TShape& shapefrom = ndfrom.shape();
+      CHECK_EQ(shapefrom[0], indexto.size());
+      for (std::size_t idx = 0; idx < shapefrom[0]; idx++) {
+        int idxto = indexto[idx];
+        if (idxto < 0) continue;
+        NDArray from = ndfrom.At(idx);
+        NDArray to = ndto->At(idxto);
+        TBlob tmpfrom = from.data();
+        TBlob tmpto = to.data();
+        mshadow::Copy(tmpto.FlatTo1D<cpu, float>(), tmpfrom.FlatTo1D<cpu, float>());
+      }
+    }, ndfrom.ctx(), const_vars, mute_vars);
 }
 
 // copy data of indexfrom positions of ndfrom to ndto.
 void CopyFromTo_IndexFrom(const NDArray& ndfrom, NDArray *ndto, const std::vector<int>& indexfrom, int priority) {
-  const TShape& shapeto = ndto->shape();
-  CHECK_EQ(shapeto[0], indexfrom.size());
-  for (std::size_t idx = 0; idx < shapeto[0]; idx++) {
-    int idxfrom = indexfrom[idx];
-    if (idxfrom < 0) continue;
-//    if (idxfrom >= ndfrom.shape()[0] || idx >= ndto->shape()[0])
-//      std::cout << "2:" << ndfrom.shape() << idxfrom << ";" << ndto->shape() << idx << "\n";
-    NDArray from = ndfrom.At(idxfrom);
-    NDArray to = ndto->At(idx);
-    TBlob tmpfrom = from.data();
-    TBlob tmpto = to.data();
-    mshadow::Copy(tmpto.FlatTo1D<cpu, float>(), tmpfrom.FlatTo1D<cpu, float>());
-  }
+  std::vector<Engine::VarHandle> const_vars;
+  if (ndfrom.var() != ndto->var()) const_vars.push_back(ndfrom.var());
+  std::vector<Engine::VarHandle> mute_vars;
+  mute_vars.push_back(ndto->var());
+  Engine::Get()->PushSync([ndfrom, ndto, indexfrom](RunContext ctx) {
+      const TShape& shapeto = ndto->shape();
+      CHECK_EQ(shapeto[0], indexfrom.size());
+      for (std::size_t idx = 0; idx < shapeto[0]; idx++) {
+        int idxfrom = indexfrom[idx];
+        if (idxfrom < 0) continue;
+    //    if (idxfrom >= ndfrom.shape()[0] || idx >= ndto->shape()[0])
+    //      std::cout << "2:" << ndfrom.shape() << idxfrom << ";" << ndto->shape() << idx << "\n";
+        NDArray from = ndfrom.At(idxfrom);
+        NDArray to = ndto->At(idx);
+        TBlob tmpfrom = from.data();
+        TBlob tmpto = to.data();
+        mshadow::Copy(tmpto.FlatTo1D<cpu, float>(), tmpfrom.FlatTo1D<cpu, float>());
+      }
+    }, ndfrom.ctx(), const_vars, mute_vars);
 }
 
 /*

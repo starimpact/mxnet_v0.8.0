@@ -240,7 +240,7 @@ class KVStoreDistServer {
     dim = req_data.ori_shape[1];
  
     CHECK_EQ(req_data.ori_index.size(), (std::size_t)req_data.lens[0]/dim);
-    CHECK_EQ(req_data.ori_lens[0], ori_row * dim);
+    CHECK_EQ(req_data.ori_lens[0], ori_row * (size_t)dim);
 
     int key = DecodeKey(req_data.keys[0]);
     auto& stored = store_[key];

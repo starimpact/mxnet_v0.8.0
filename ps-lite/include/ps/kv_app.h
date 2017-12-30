@@ -38,7 +38,7 @@ struct KVPairs {
   /** \brief the according values */
   SArray<Val> vals;
   /** \brief the according value lengths (could be empty) */
-  SArray<int> lens;
+  SArray<size_t> lens;
 };
 
 template <typename Val>
@@ -50,9 +50,9 @@ struct KVPairs_Partial {
   /** \brief the according values */
   SArray<Val> vals;
   /** \brief the according value lengths (could be empty) */
-  SArray<int> lens;
+  SArray<size_t> lens;
 
-  SArray<int> ori_lens;
+  SArray<size_t> ori_lens;
 
   SArray<int> ori_shape;
 
@@ -128,25 +128,25 @@ class KVWorker : public SimpleApp {
    */
   int Push(const std::vector<Key>& keys,
            const std::vector<Val>& vals,
-           const std::vector<int>& lens = {},
+           const std::vector<size_t>& lens = {},
            int cmd = 0,
            const Callback& cb = nullptr) {
     return ZPush(
-        SArray<Key>(keys), SArray<Val>(vals), SArray<int>(lens), cmd, cb);
+        SArray<Key>(keys), SArray<Val>(vals), SArray<size_t>(lens), cmd, cb);
   }
 
   int Push_Partial(const std::vector<Key>& keys,
            const std::vector<Val>& vals,
            const SArray<int>& ori_shape,
            const SArray<int>& ori_index,
-           const SArray<int>& ori_lens,
-           const std::vector<int>& lens,
+           const SArray<size_t>& ori_lens,
+           const std::vector<size_t>& lens,
            int cmd = 1,
            const Callback& cb = nullptr) {
 
     return ZPush_Partial(
         SArray<Key>(keys), SArray<Val>(vals), ori_shape,
-        ori_index, ori_lens, SArray<int>(lens), cmd, cb);
+        ori_index, ori_lens, SArray<size_t>(lens), cmd, cb);
   }
 
   /**
@@ -177,7 +177,7 @@ class KVWorker : public SimpleApp {
    */
   int Pull(const std::vector<Key>& keys,
            std::vector<Val>* vals,
-           std::vector<int>* lens = nullptr,
+           std::vector<size_t>* lens = nullptr,
            int cmd = 0,
            const Callback& cb = nullptr) {
     return Pull_(SArray<Key>(keys), vals, lens, cmd, cb);
@@ -207,7 +207,7 @@ class KVWorker : public SimpleApp {
    */
   int ZPush(const SArray<Key>& keys,
             const SArray<Val>& vals,
-            const SArray<int>& lens = {},
+            const SArray<size_t>& lens = {},
             int cmd = 0,
             const Callback& cb = nullptr) {
     int ts = obj_->NewRequest(kServerGroup);
@@ -222,10 +222,10 @@ class KVWorker : public SimpleApp {
 
   int ZPush_Partial(const SArray<Key>& keys,
             const SArray<Val>& vals,
-            const SArray<int>& lens,
+            const SArray<size_t>& lens,
             const SArray<int>& ori_shape,
             const SArray<int>& ori_index,
-            const SArray<int>& ori_lens,
+            const SArray<size_t>& ori_lens,
             int cmd = 1,
             const Callback& cb = nullptr) {
     int ts = obj_->NewRequest(kServerGroup);
@@ -251,7 +251,7 @@ class KVWorker : public SimpleApp {
    */
   int ZPull(const SArray<Key>& keys,
             SArray<Val>* vals,
-            SArray<int>* lens = nullptr,
+            SArray<size_t>* lens = nullptr,
             int cmd = 0,
             const Callback& cb = nullptr) {
     return Pull_(keys, vals, lens, cmd, cb);
@@ -260,9 +260,9 @@ class KVWorker : public SimpleApp {
   int ZPull_Partial(const SArray<Key>& keys,
             const SArray<int>& ori_shape,
             const SArray<int>& ori_index,
-            const SArray<int>& ori_lens,
+            const SArray<size_t>& ori_lens,
             SArray<Val>* vals,
-            const SArray<int>& lens,
+            const SArray<size_t>& lens,
             int cmd = 0,
             const Callback& cb = nullptr) {
     return Pull_Partial_(keys, ori_shape, ori_index, ori_lens, vals, lens, cmd, cb);
@@ -306,8 +306,8 @@ class KVWorker : public SimpleApp {
   template <typename C>
   int Pull_Partial_(
     const SArray<Key>& keys, const SArray<int>& ori_shape,
-    const SArray<int>& ori_index, const SArray<int>& ori_lens,
-    C* vals, const SArray<int>& lens, int cmd, const Callback& cb);
+    const SArray<int>& ori_index, const SArray<size_t>& ori_lens,
+    C* vals, const SArray<size_t>& lens, int cmd, const Callback& cb);
   /**
    * \brief add a callback for a request. threadsafe.
    * @param cb callback
@@ -589,7 +589,7 @@ void KVWorker<Val>::DefaultSlicer(
     kv.keys = send.keys.segment(pos[i], pos[i+1]);
     if (send.lens.size()) {
       kv.lens = send.lens.segment(pos[i], pos[i+1]);
-      for (int l : kv.lens) val_end += l;
+      for (size_t l : kv.lens) val_end += l;
       kv.vals = send.vals.segment(val_begin, val_end);
       val_begin = val_end;
     } else {
@@ -660,13 +660,13 @@ void KVWorker<Val>::DefaultSlicer_Partial(
     
 //    CHECK(pos[i] <= pos[i+1]) << ", -----2\n";
     kv.lens = send.lens.segment(pos[i], pos[i+1]);
-    for (int l : kv.lens) val_end += l;
+    for (size_t l : kv.lens) val_end += l;
     if (send.vals.size() > 0) {
 //      CHECK(val_begin <= val_end) << ", -----3\n";
       kv.vals = send.vals.segment(val_begin, val_end);
     }
-    int row_begin = val_begin / dim;
-    int row_end = val_end / dim;
+    size_t row_begin = val_begin / dim;
+    size_t row_end = val_end / dim;
 //    CHECK(row_begin <= row_end) << ", " << send.vals.size()
 //            << ", " << i << ", " << kv.lens << ", " << send.lens
 //            << ", " << row_begin << ", " << row_end
@@ -678,9 +678,9 @@ void KVWorker<Val>::DefaultSlicer_Partial(
 
 //    CHECK(pos[i] <= pos[i+1]) << ", -----5\n";
     kv.ori_lens = send.ori_lens.segment(pos[i], pos[i+1]);
-    for (int l : kv.ori_lens) oval_end += l;
-    int orow_begin = oval_begin / dim;
-    int orow_end = oval_end / dim;
+    for (size_t l : kv.ori_lens) oval_end += l;
+    size_t orow_begin = oval_begin / dim;
+    size_t orow_end = oval_end / dim;
     kv.ori_shape[0] = orow_end - orow_begin;
 
     for (int& idx : kv.ori_index) idx -= orow_begin;
@@ -877,7 +877,7 @@ int KVWorker<Val>::Pull_(
         CHECK_EQ(vals->size(), total_val);
       }
       Val* p_vals = vals->data();
-      int *p_lens = nullptr;
+      size_t *p_lens = nullptr;
       if (lens) {
         if (lens->empty()) {
           lens->resize(keys.size());
@@ -890,7 +890,7 @@ int KVWorker<Val>::Pull_(
         memcpy(p_vals, s.vals.data(), s.vals.size() * sizeof(Val));
         p_vals += s.vals.size();
         if (p_lens) {
-          memcpy(p_lens, s.lens.data(), s.lens.size() * sizeof(int));
+          memcpy(p_lens, s.lens.data(), s.lens.size() * sizeof(size_t));
           p_lens += s.lens.size();
         }
       }
@@ -910,8 +910,8 @@ template <typename Val>
 template <typename C>
 int KVWorker<Val>::Pull_Partial_(
     const SArray<Key>& keys, const SArray<int>& ori_shape,
-    const SArray<int>& ori_index, const SArray<int>& ori_lens,
-    C* vals, const SArray<int>& lens, int cmd, const Callback& cb) {
+    const SArray<int>& ori_index, const SArray<size_t>& ori_lens,
+    C* vals, const SArray<size_t>& lens, int cmd, const Callback& cb) {
   int ts = obj_->NewRequest(kServerGroup);
   //CHECK(ori_shape[1]==128) << "," << ori_shape << std::endl;
   AddCallback(ts, [this, ts, keys, ori_shape, ori_index, 

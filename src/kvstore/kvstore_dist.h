@@ -438,9 +438,9 @@ class KVStoreDist : public KVStoreLocal {
    */
   struct PSKV {
     ps::SArray<ps::Key> keys;  // n keys
-    ps::SArray<int> lens;  // the length of the i-th value
-    ps::SArray<int> ori_lens;
-    int size;
+    ps::SArray<size_t> lens;  // the length of the i-th value
+    ps::SArray<size_t> ori_lens;
+    size_t size;
   };
 
   /**

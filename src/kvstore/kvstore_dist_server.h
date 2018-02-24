@@ -291,8 +291,8 @@ class KVStoreDistServer {
         stored_buf = NDArray(rsv_dshape, Context());
         grad_buf = NDArray(rsv_dshape, Context());
         CopyFromTo(recved, &stored, 0);
-        server->Response_Partial(req_meta);
         stored.WaitToRead();
+        server->Response_Partial(req_meta);
       } else if (sync_mode_) {
         // synced push
         auto& merged = merge_buf_[key];
@@ -309,27 +309,28 @@ class KVStoreDistServer {
 
         for (int i = 0; i < partial_statenum; i++) {
           CopyFromTo_IndexFrom(states[i], &states_partial[i], ori_index, 0);
+          states_partial[i].WaitToRead();
         }
         CopyFromTo_IndexFrom(stored, &store_partial, ori_index, 0);
+        store_partial.WaitToRead();
         CopyFromTo(recved, &grad_partial, 0);
+        grad_partial.WaitToRead();
 
         exec_.Exec([this, key, &grad_partial, &ori_index, &store_partial, &states_partial](){
             CHECK(partial_updater_);
             partial_updater_(key, grad_partial, &store_partial, &states_partial);
           });
-//        store_partial.WaitToRead();
-//        for (int i = 0; i < partial_statenum; i++) {
-//          states_partial[i].WaitToRead();
-//        }
+        store_partial.WaitToRead();
+        for (int i = 0; i < partial_statenum; i++) {
+          states_partial[i].WaitToRead();
+        }
 
         for (int i = 0; i < partial_statenum; i++) {
           CopyFromTo_IndexTo(states_partial[i], &states[i], ori_index, 0);
+          states[i].WaitToRead();
         }
         CopyFromTo_IndexTo(store_partial, &stored, ori_index, 0);
         stored.WaitToRead();
-        for (int i = 0; i < partial_statenum; i++) {
-          states[i].WaitToRead();
-        }
 
         if (merged.request.size() == (size_t)ps::NumWorkers()) {
           for (const auto& req : merged.request) {

@@ -140,7 +140,7 @@ class ZMQVan : public Van {
       return -1;
     }
     zmq_msg_close(&meta_msg);
-    int send_bytes = meta_size;
+    size_t send_bytes = meta_size;
 
     // send data
     for (int i = 0; i < n; ++i) {

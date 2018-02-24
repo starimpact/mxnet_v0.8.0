@@ -372,19 +372,19 @@ class KVStoreDistServer {
 #if DBG_SHOW_TIME 
         start1 = clock();
 #endif
-//        for (int i = 0; i < partial_statenum; i++) {
-//          states_partial[i].WaitToRead();
-//        }
+        for (int i = 0; i < partial_statenum; i++) {
+          states_partial[i].WaitToRead();
+        }
 #if DBG_SHOW_TIME 
         end1 = clock();
         cost_1 = (float)(end1 - start1)*1000 / CLOCKS_PER_SEC;
 #endif
 
         CopyFromTo_IndexFrom(stored, &store_partial, ori_index, 0);
-//        store_partial.WaitToRead();
+        store_partial.WaitToRead();
 
         CopyFromTo(recved, &grad_partial, 0);
-//        grad_partial.WaitToRead();
+        grad_partial.WaitToRead();
 
 #if DBG_SHOW_TIME 
         end = clock();
@@ -401,11 +401,10 @@ class KVStoreDistServer {
             CHECK(partial_updater_);
             partial_updater_(key, grad_partial, &store_partial, &states_partial);
           });
-        server->Response_Partial(req_meta);
- //       store_partial.WaitToRead();
- //       for (int i = 0; i < partial_statenum; i++) {
- //         states_partial[i].WaitToRead();
- //       }
+        store_partial.WaitToRead();
+        for (int i = 0; i < partial_statenum; i++) {
+          states_partial[i].WaitToRead();
+        }
 //        std::cout << "hello async push 2...\n";
 
 #if DBG_SHOW_TIME 
@@ -438,6 +437,7 @@ class KVStoreDistServer {
                   << "; " << rsv_dshape
                   << std::endl;
 #endif
+        server->Response_Partial(req_meta);
       }
     } else {
       // pull

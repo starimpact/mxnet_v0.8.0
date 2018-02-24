@@ -146,6 +146,7 @@ class ZMQVan : public Van {
     for (int i = 0; i < n; ++i) {
       zmq_msg_t data_msg;
       SArray<char>* data = new SArray<char>(msg.data[i]);
+      assert(data->size() <= 2147483647);
       int data_size = data->size();
 //      std::cout << "SendMsg:" << i << ":" << data_size << std::endl;
       zmq_msg_init_data(&data_msg, data->data(), data->size(), FreeData, data);
